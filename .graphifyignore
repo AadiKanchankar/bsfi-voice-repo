@@ -1,0 +1,65 @@
+# Keep the graph build away from anything large, generated, or private.
+# Document extraction sends content to a model, so this list is a privacy
+# control, not just a speed one.
+
+# Dependencies and build output
+.venv/
+node_modules/
+frontend/dist/
+frontend/node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Model weights
+models/
+
+# Generated runtime state, including the database
+runtime/
+*.db
+*.sqlite*
+*.db-wal
+*.db-shm
+
+# Audio. Caller recordings and enrolment clips are biometric data and must
+# never be sent anywhere for indexing.
+data/recordings/
+data/seed/voices/
+data/seed/trials/
+data/seed/spoofs/
+data/eval/audio/
+*.wav
+*.webm
+*.mp3
+*.mp4
+
+# Secrets
+.env
+secrets/
+*.key
+*.pem
+
+# Graphify's own output
+graphify-out/
+
+# The frozen snapshot is a byte copy of the live tree; indexing it would
+# double every node in the graph for no benefit.
+stable-local-2026-09-21/
+
+# Screenshots and scratch recordings from manual testing
+Testing-photos-Videos/
+
+# Graphify's own skill documentation. Indexing the tool's manual into the
+# project's graph makes the graph about graphify instead of about the bank.
+.claude/skills/
+
+# Figures are generated from scripts/diagrams/generate.py, which is already
+# indexed as code. Running vision extraction over the rendered output would
+# add cost and no information.
+docs/figures/
+
+# The change request and the original build prompt are instructions to me,
+# not descriptions of the system. ARCHITECTURE.md and DECISIONS.md are the
+# durable record.
+TASKS/
+CLAUDE_CODE_PROMPT.md

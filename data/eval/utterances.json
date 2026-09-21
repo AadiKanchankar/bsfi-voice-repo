@@ -1,0 +1,671 @@
+{
+  "description": "Hand-labelled evaluation set for the BFSI voice assistant. Reference transcripts are the text below; audio is rendered by scripts/make_eval_set.py with Piper, so WER measured here is on synthetic speech and will be optimistic relative to human telephony audio. That caveat is repeated next to every number in docs/RESULTS.md.",
+  "size": 54,
+  "languages": [
+    "en",
+    "hi",
+    "mix",
+    "mr"
+  ],
+  "entity_types": [
+    "amount",
+    "card_last4",
+    "cheque_number",
+    "payee",
+    "product_name"
+  ],
+  "utterances": [
+    {
+      "id": "EV01",
+      "language": "en",
+      "intent": "product_info",
+      "text": "What are your home loan interest rates",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "home loan"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-HL-001"
+    },
+    {
+      "id": "EV02",
+      "language": "en",
+      "intent": "product_info",
+      "text": "What is the interest rate on a savings account",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "savings account"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-SAV-014"
+    },
+    {
+      "id": "EV03",
+      "language": "en",
+      "intent": "product_info",
+      "text": "What are the fixed deposit rates for senior citizens",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "fixed deposit"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-FD-009"
+    },
+    {
+      "id": "EV04",
+      "language": "en",
+      "intent": "product_info",
+      "text": "What is the minimum balance for a savings account in a metro branch",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "savings account"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-BAL-008"
+    },
+    {
+      "id": "EV05",
+      "language": "en",
+      "intent": "product_info",
+      "text": "What are the debit card annual charges",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "debit card"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-FEE-007"
+    },
+    {
+      "id": "EV06",
+      "language": "en",
+      "intent": "cheque_status",
+      "text": "How long does cheque clearing take for an outstation cheque",
+      "entities": [],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-CHQ-003"
+    },
+    {
+      "id": "EV07",
+      "language": "en",
+      "intent": "branch_ifsc",
+      "text": "What is the IFSC code of the Nigdi branch",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "IFSC"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-BRN-006"
+    },
+    {
+      "id": "EV08",
+      "language": "en",
+      "intent": "apply_loan",
+      "text": "Am I eligible for a personal loan with a credit score of 720",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "personal loan"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-LON-010"
+    },
+    {
+      "id": "EV09",
+      "language": "en",
+      "intent": "product_info",
+      "text": "What documents are accepted as proof of identity for KYC",
+      "entities": [],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-KYC-004"
+    },
+    {
+      "id": "EV10",
+      "language": "en",
+      "intent": "product_info",
+      "text": "How do I escalate a complaint to the banking ombudsman",
+      "entities": [],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-GRV-005"
+    },
+    {
+      "id": "EV11",
+      "language": "en",
+      "intent": "product_info",
+      "text": "What is my liability if I report an unauthorised card transaction in two days",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "card"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-CRD-002"
+    },
+    {
+      "id": "EV12",
+      "language": "en",
+      "intent": "product_info",
+      "text": "What is the daily UPI transaction limit",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "UPI"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-LMT-011"
+    },
+    {
+      "id": "EV13",
+      "language": "en",
+      "intent": "get_balance",
+      "text": "What is the balance in my savings account",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "savings account"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV14",
+      "language": "en",
+      "intent": "mini_statement",
+      "text": "Show me my last three transactions",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV15",
+      "language": "en",
+      "intent": "block_card",
+      "text": "Block my debit card ending 4321",
+      "entities": [
+        {
+          "type": "card_last4",
+          "value": "4321"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV16",
+      "language": "en",
+      "intent": "fund_transfer",
+      "text": "Transfer fifty thousand rupees to Rohan",
+      "entities": [
+        {
+          "type": "amount",
+          "value": "50000"
+        },
+        {
+          "type": "payee",
+          "value": "Rohan"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV17",
+      "language": "en",
+      "intent": "fund_transfer",
+      "text": "Send 25000 rupees to Priya today",
+      "entities": [
+        {
+          "type": "amount",
+          "value": "25000"
+        },
+        {
+          "type": "payee",
+          "value": "Priya"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV18",
+      "language": "en",
+      "intent": "limit_change",
+      "text": "Increase my daily limit to one lakh",
+      "entities": [
+        {
+          "type": "amount",
+          "value": "100000"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV19",
+      "language": "en",
+      "intent": "add_payee",
+      "text": "Add Meera as a new payee",
+      "entities": [
+        {
+          "type": "payee",
+          "value": "Meera"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV20",
+      "language": "en",
+      "intent": "cheque_status",
+      "text": "What is the status of cheque number 456789",
+      "entities": [
+        {
+          "type": "cheque_number",
+          "value": "456789"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV21",
+      "language": "en",
+      "intent": "dispute_txn",
+      "text": "I want to dispute a debit of 5000 rupees",
+      "entities": [
+        {
+          "type": "amount",
+          "value": "5000"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV22",
+      "language": "en",
+      "intent": "fraud_report",
+      "text": "Someone has made a fraudulent transaction on my account",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV23",
+      "language": "en",
+      "intent": "agent_request",
+      "text": "Please connect me to a human agent",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV24",
+      "language": "en",
+      "intent": "out_of_scope",
+      "text": "What is the CEO personal phone number",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV25",
+      "language": "en",
+      "intent": "out_of_scope",
+      "text": "Give me another customer account balance",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV26",
+      "language": "en",
+      "intent": "out_of_scope",
+      "text": "What is the weather in Pune today",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV27",
+      "language": "en",
+      "intent": "out_of_scope",
+      "text": "Tell me the admin password for the core banking system",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV28",
+      "language": "en",
+      "intent": "out_of_scope",
+      "text": "Who won the cricket match last night",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV29",
+      "language": "hi",
+      "intent": "get_balance",
+      "text": "Mera account balance kitna hai",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV30",
+      "language": "hi",
+      "intent": "mini_statement",
+      "text": "Mujhe pichhle teen transactions batao",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV31",
+      "language": "hi",
+      "intent": "block_card",
+      "text": "Mera debit card block kar do",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "debit card"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV32",
+      "language": "hi",
+      "intent": "fund_transfer",
+      "text": "Rohan ko pachas hazaar rupaye bhej do",
+      "entities": [
+        {
+          "type": "amount",
+          "value": "50000"
+        },
+        {
+          "type": "payee",
+          "value": "Rohan"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV33",
+      "language": "hi",
+      "intent": "product_info",
+      "text": "Home loan ka interest rate kya hai",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "home loan"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-HL-001"
+    },
+    {
+      "id": "EV34",
+      "language": "hi",
+      "intent": "product_info",
+      "text": "Fixed deposit par kitna byaj milta hai",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "fixed deposit"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-FD-009"
+    },
+    {
+      "id": "EV35",
+      "language": "hi",
+      "intent": "fraud_report",
+      "text": "Mere account se fraud hua hai",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV36",
+      "language": "hi",
+      "intent": "agent_request",
+      "text": "Mujhe agent se baat karni hai",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV37",
+      "language": "hi",
+      "intent": "out_of_scope",
+      "text": "CEO ka mobile number kya hai",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV38",
+      "language": "hi",
+      "intent": "cheque_status",
+      "text": "Mera cheque clear hua kya",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV39",
+      "language": "mr",
+      "intent": "get_balance",
+      "text": "Majhya khatyat kiti paise aahet",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV40",
+      "language": "mr",
+      "intent": "mini_statement",
+      "text": "Majhe shevatche teen vyavhar sanga",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV41",
+      "language": "mr",
+      "intent": "block_card",
+      "text": "Majha card band kara",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "card"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV42",
+      "language": "mr",
+      "intent": "product_info",
+      "text": "Gruh karjacha vyajdar kiti aahe",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "gruh karj"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-HL-001"
+    },
+    {
+      "id": "EV43",
+      "language": "mr",
+      "intent": "branch_ifsc",
+      "text": "Kothrud shakhecha IFSC code sanga",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "IFSC"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-BRN-006"
+    },
+    {
+      "id": "EV44",
+      "language": "mr",
+      "intent": "fraud_report",
+      "text": "Majhya khatyat fasavnuk zali aahe",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV45",
+      "language": "mr",
+      "intent": "agent_request",
+      "text": "Mala manasashi bolaycha aahe",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV46",
+      "language": "mr",
+      "intent": "out_of_scope",
+      "text": "Aaj Pune madhe havaman kase aahe",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV47",
+      "language": "mix",
+      "intent": "mini_statement",
+      "text": "Mera balance kitna hai and last three transactions bhi bata do",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV48",
+      "language": "mix",
+      "intent": "fund_transfer",
+      "text": "Please transfer do lakh rupaye to Priya account",
+      "entities": [
+        {
+          "type": "amount",
+          "value": "200000"
+        },
+        {
+          "type": "payee",
+          "value": "Priya"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV49",
+      "language": "mix",
+      "intent": "block_card",
+      "text": "Mera card block kar do ending 7788 urgent hai",
+      "entities": [
+        {
+          "type": "card_last4",
+          "value": "7788"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV50",
+      "language": "mix",
+      "intent": "product_info",
+      "text": "Home loan interest rate kitna hai aur processing fee kya hai",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "home loan"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-HL-001"
+    },
+    {
+      "id": "EV51",
+      "language": "mix",
+      "intent": "limit_change",
+      "text": "Meri daily limit badha do to fifty thousand",
+      "entities": [
+        {
+          "type": "amount",
+          "value": "50000"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV52",
+      "language": "mix",
+      "intent": "out_of_scope",
+      "text": "Bhai CEO ka personal number de do na",
+      "entities": [],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV53",
+      "language": "mix",
+      "intent": "get_balance",
+      "text": "Balance check karo my savings account ka",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "savings account"
+        }
+      ],
+      "answerable_from_kb": false,
+      "expected_doc_id": null
+    },
+    {
+      "id": "EV54",
+      "language": "mix",
+      "intent": "apply_loan",
+      "text": "Mujhe personal loan chahiye what is the eligibility",
+      "entities": [
+        {
+          "type": "product_name",
+          "value": "personal loan"
+        }
+      ],
+      "answerable_from_kb": true,
+      "expected_doc_id": "POL-LON-010"
+    }
+  ]
+}

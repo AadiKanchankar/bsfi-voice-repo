@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+runtime/
+models/
+node_modules/
+frontend/dist/
+.env
+data/seed/voices/
+data/seed/spoofs/
+data/eval/audio/
+
+frontend/tsconfig.tsbuildinfo

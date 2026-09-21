@@ -1,0 +1,35 @@
+# Optional single-container path. The host path (`make setup && make models &&
+# make seed && make demo`) is faster to start and is what docs/DEMO_RUNBOOK.md
+# assumes. Use this only where installing the toolchain on the host is not
+# worth the argument.
+#
+# First run, in order:
+#   docker compose run --rm api python scripts/download_models.py
+#   docker compose run --rm api python scripts/seed_data.py
+#   docker compose up
+#
+# Then serve the frontend separately with `make frontend`, or point a browser
+# at the API directly. The frontend is a static bundle and is deliberately not
+# containerised: one more image to rebuild for a demo that runs on a laptop.
+
+services:
+  api:
+    build: .
+    image: bfsi-voice-assistant:demo
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Models and runtime state live outside the image, so a code change does
+      # not invalidate a gigabyte of downloads.
+      - ./models:/models
+      - ./runtime:/runtime
+      - ./data:/app/data
+    environment:
+      # All three defaults are obviously not secret. A deployment would take
+      # them from a secret manager; see .env.example.
+      BFSI_LEDGER_KEY: ${BFSI_LEDGER_KEY:-demo-ledger-key-not-for-production}
+      BFSI_AES_KEY: ${BFSI_AES_KEY:-demo-aes-key-not-for-production}
+      BFSI_JWT_SECRET: ${BFSI_JWT_SECRET:-demo-jwt-secret-not-for-production}
+      BFSI_ASR_MODEL: ${BFSI_ASR_MODEL:-base}
+      BFSI_ASR_COMPUTE: ${BFSI_ASR_COMPUTE:-int8}
+    restart: unless-stopped

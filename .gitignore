@@ -1,0 +1,25 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+runtime/
+models/
+node_modules/
+frontend/dist/
+.env
+data/seed/voices/
+data/seed/spoofs/
+data/eval/audio/
+
+frontend/tsconfig.tsbuildinfo
+
+# Generated voice samples. Reproducible from scripts; the recordings of real
+# bugs (the mp4 and the screenshots) are kept because those are evidence.
+Testing-photos-Videos/after-fix/
+Testing-photos-Videos/voice-trials/
+
+# Graphify intermediates. The three durable outputs are committed explicitly:
+# graph.json, GRAPH_REPORT.md, graph.html.
+graphify-out/.graphify_*
+graphify-out/.chunk*
+graphify-out/cache/

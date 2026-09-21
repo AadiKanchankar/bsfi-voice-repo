@@ -1,0 +1,11 @@
+.venv/
+models/
+runtime/
+node_modules/
+frontend/
+__pycache__/
+.pytest_cache/
+data/seed/voices/
+data/seed/spoofs/
+data/seed/trials/
+data/eval/audio/

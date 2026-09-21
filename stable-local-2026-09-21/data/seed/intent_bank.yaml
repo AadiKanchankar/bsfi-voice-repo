@@ -1,0 +1,432 @@
+# Seeded training utterances for the intent head (A3).
+# Four languages per intent: English, Hindi (romanised and Devanagari),
+# Marathi, and Hindi/Marathi-English code-mixed, because code-mixing is the
+# normal case for this user base, not an edge case.
+# out_of_scope carries the most and the widest variety: it is what protects the
+# refusal path, and a thin out_of_scope class is how a banking bot ends up
+# confidently answering a question about the CEO's phone number.
+
+get_balance:
+  - What is my account balance
+  - Tell me my current balance
+  - How much money do I have in my account
+  - Check my savings account balance
+  - Can you tell me the balance in my account
+  - What's the available balance
+  - I want to know my account balance
+  - Balance enquiry please
+  - Show me my current account balance
+  - How much is left in my account
+  - Mera balance kitna hai
+  - Khate mein kitna paisa hai
+  - Mujhe apna balance batao
+  - Account mein kitne rupaye hain
+  - मेरा बैलेंस कितना है
+  - मेरे खाते में कितने पैसे हैं
+  - खाते का बैलेंस बताइए
+  - Majhya khatyat kiti paise aahet
+  - Maza balance kiti aahe
+  - Mala balance sanga
+  - माझ्या खात्यात किती पैसे आहेत
+  - माझा बॅलन्स किती आहे
+  - Mera savings account ka balance check karo
+  - Balance kitna hai account mein bata do
+  - Mala maza account balance sanga please
+  - Current balance kya hai mere account ka
+  - Account balance bata do jaldi
+  - Kitna paisa hai mere account mein right now
+
+mini_statement:
+  - Show me my last three transactions
+  - I want a mini statement
+  - Give me my recent transaction history
+  - What were my last five transactions
+  - Send me the mini statement for my account
+  - List my recent debits and credits
+  - Show transaction history for this month
+  - Can I see my last few transactions
+  - Print my mini statement
+  - What payments went out last week
+  - Mujhe mini statement chahiye
+  - Pichhle teen transactions batao
+  - Mere account ke last transactions dikhao
+  - Recent len den ki jankari do
+  - मुझे मिनी स्टेटमेंट चाहिए
+  - पिछले पांच लेनदेन दिखाइए
+  - Majhe shevatche teen vyavhar sanga
+  - Mala mini statement pahije
+  - माझे शेवटचे व्यवहार दाखवा
+  - Last three transactions bhi bata do
+  - Mini statement chahiye mujhe abhi
+  - Mere last 5 transactions ka detail do
+  - Majhya khatyache recent transactions dakhva
+  - Statement dikha do last week ka
+  - Kal se aaj tak ke transactions batao
+  - Show me transactions from last month please
+
+cheque_status:
+  - What is the status of my cheque
+  - Has my cheque been cleared
+  - Check cheque number 456789 status
+  - When will my cheque clear
+  - Is the cheque I deposited credited
+  - Cheque clearing status please
+  - Tell me if cheque 112233 has bounced
+  - How long does cheque clearing take
+  - My cheque has not been credited yet
+  - Status of the cheque I deposited on Monday
+  - Mera cheque clear hua kya
+  - Cheque ka status batao
+  - Cheque number 445566 ka kya hua
+  - चेक क्लियर हुआ क्या
+  - मेरे चेक की स्थिति बताइए
+  - Maza cheque clear zala ka
+  - Cheque chi sthiti sanga
+  - माझा चेक क्लिअर झाला का
+  - Cheque status check karo mera
+  - Mera cheque kab tak clear hoga
+  - Cheque bounce to nahi hua
+  - Majha cheque kadhi clear hoil
+  - Deposit kiya hua cheque ka status kya hai
+  - Cheque clearing mein kitna time lagta hai
+  - Is my cheque still pending
+
+branch_ifsc:
+  - What is the IFSC code of your Pune branch
+  - Find the nearest branch to me
+  - Give me the IFSC code for Nigdi branch
+  - Where is your Kothrud branch located
+  - Branch address and IFSC please
+  - What are the branch timings
+  - I need the IFSC code for a transfer
+  - Which branch does my account belong to
+  - List branches in Pune
+  - MICR and IFSC code of the main branch
+  - IFSC code batao Pune branch ka
+  - Nazdeeki branch kahan hai
+  - शाखा का आईएफएससी कोड बताइए
+  - पुणे की शाखा कहाँ है
+  - Javalchi shakha kuthe aahe
+  - IFSC code sanga
+  - जवळची शाखा कुठे आहे
+  - Nigdi branch ka IFSC code chahiye
+  - Branch timing kya hai aapki
+  - Mala Kothrud branch cha IFSC pahije
+  - Pune mein kaunsi branch hai aapki
+  - Branch ka address bata do
+  - Nearest ATM and branch kahan milega
+  - Branch kitne baje khulti hai
+  - Aapki branch ka IFSC aur address dono chahiye
+  - Shakha kramank ani IFSC sanga
+
+product_info:
+  - What are your home loan interest rates
+  - Tell me about your fixed deposit schemes
+  - What is the interest rate on savings account
+  - Do you offer education loans
+  - What are the charges for a debit card
+  - Explain your credit card benefits
+  - What documents do I need to open an account
+  - What is the minimum balance requirement
+  - Tell me about your car loan offers
+  - What is the current FD interest rate for senior citizens
+  - Are there any processing fees on personal loans
+  - What is your KYC policy
+  - Home loan ka interest rate kya hai
+  - Fixed deposit par kitna byaj milta hai
+  - Savings account ka minimum balance kitna hai
+  - होम लोन की ब्याज दर क्या है
+  - एफडी पर कितना ब्याज मिलता है
+  - Gruh karjache vyajdar kiti aahe
+  - FD var kiti vyaj miltay
+  - गृह कर्जाचा व्याजदर किती आहे
+  - Home loan interest rate kitna hai abhi
+  - Credit card ke charges kya kya hain
+  - Personal loan ka processing fee kitna hai
+  - Mala FD chya schemes baddal sanga
+  - What is the penalty for not maintaining minimum balance
+  - Debit card annual charges kitne hain
+
+block_card:
+  - Block my card
+  - I lost my debit card please block it
+  - My credit card is stolen block it immediately
+  - Please deactivate my card
+  - I want to block my ATM card
+  - Freeze my card right now
+  - Someone took my card block it
+  - Block card ending 4321
+  - Stop my debit card
+  - Disable my credit card temporarily
+  - Mera card block kar do
+  - Card kho gaya hai band karo
+  - Mera debit card block karna hai
+  - मेरा कार्ड ब्लॉक कर दीजिए
+  - कार्ड खो गया है बंद कर दो
+  - Maza card band kara
+  - Majha debit card block kara
+  - माझे कार्ड बंद करा
+  - Mera card block kar do abhi
+  - Card block karna hai urgent
+  - Majha card harvala aahe band kara
+  - Debit card block kar do please
+  - Card chori ho gaya block karo
+  - Please block my card ending in 7788
+  - Block karo mera card turant
+  - Card band karaycha aahe lagech
+  - Hot list my debit card
+
+limit_change:
+  - Increase my card limit
+  - I want to change my daily transaction limit
+  - Reduce my ATM withdrawal limit
+  - Raise my credit card limit to one lakh
+  - Change the online transaction limit
+  - Set my daily limit to fifty thousand
+  - Lower my UPI limit
+  - Can you increase my debit card spending limit
+  - I need a higher transaction limit
+  - Modify my per day withdrawal limit
+  - Mera card limit badha do
+  - Daily limit change karna hai
+  - Transaction limit kam kar do
+  - मेरी कार्ड लिमिट बढ़ा दीजिए
+  - रोज की लिमिट बदलनी है
+  - Majhi card limit vadhva
+  - Daily limit badla
+  - माझी कार्ड मर्यादा वाढवा
+  - Card ka limit pachas hazaar kar do
+  - Limit increase karna hai ek lakh tak
+  - ATM withdrawal limit kam karo
+  - Mala transaction limit vadhvaychi aahe
+  - Please increase my daily limit to 50000
+  - Meri UPI limit badha do
+  - Withdrawal limit change kar do aaj hi
+  - Set a lower online limit for my card
+
+add_payee:
+  - Add a new payee
+  - I want to add a beneficiary
+  - Register a new payee named Rohan
+  - Add this account as a beneficiary
+  - Please add my brother as a payee
+  - Set up a new beneficiary for transfers
+  - Add payee with account number and IFSC
+  - I need to add a new person to send money
+  - Create a beneficiary
+  - Add Priya to my payee list
+  - Naya payee add karo
+  - Beneficiary add karna hai
+  - Ek naya payee jodna hai
+  - नया लाभार्थी जोड़िए
+  - पेयी ऐड कर दो
+  - Nava payee jodaa
+  - Beneficiary add kara
+  - नवीन लाभार्थी जोडा
+  - Mujhe naya beneficiary add karna hai
+  - Payee add kar do Rohan ke naam se
+  - Mala navin payee add karaycha aahe
+  - Add payee karna hai account number ke saath
+  - Naya beneficiary register karo mere account mein
+  - Payee jodaycha aahe account number sahit
+  - Add a new beneficiary with IFSC code
+  - Mere payee list mein ek naam add karo
+
+fund_transfer:
+  - Transfer ten thousand rupees to Rohan
+  - Send money to my saved payee
+  - I want to make a NEFT transfer
+  - Pay five thousand to Priya
+  - Transfer fifty thousand to my other account
+  - Make an IMPS payment of two thousand
+  - Send 25000 rupees to beneficiary
+  - I need to transfer funds today
+  - Do a UPI payment of one thousand
+  - Move money from savings to current account
+  - Dus hazaar rupaye transfer karo
+  - Paise bhejne hain Rohan ko
+  - Pachas hazaar ka transfer karna hai
+  - दस हज़ार रुपये भेजिए
+  - पैसे ट्रांसफर करने हैं
+  - Paise pathvayche aahet
+  - Don hajar rupaye transfer kara
+  - पैसे पाठवायचे आहेत
+  - Rohan ko 10000 transfer kar do
+  - Mujhe paanch hazaar bhejne hain Priya ko
+  - Mala pachas hajar transfer karayche aahet
+  - Transfer 1 lakh to my savings account
+  - NEFT karna hai do lakh ka
+  - Send fifty thousand to my brother's account
+  - IMPS kar do do hazaar ka
+  - Maza payee la paise pathva
+
+apply_loan:
+  - I want to apply for a home loan
+  - How do I apply for a personal loan
+  - Start a car loan application
+  - Am I eligible for an education loan
+  - I need a loan of five lakh
+  - Apply for a gold loan
+  - What is the process to get a home loan
+  - Check my loan eligibility
+  - I want to take a personal loan
+  - Help me apply for a business loan
+  - Home loan ke liye apply karna hai
+  - Personal loan chahiye mujhe
+  - Loan ke liye eligible hoon kya
+  - होम लोन के लिए आवेदन करना है
+  - मुझे पर्सनल लोन चाहिए
+  - Mala gruh karj havay
+  - Karjasathi arj karaycha aahe
+  - मला कर्ज हवे आहे
+  - Mujhe 5 lakh ka loan chahiye
+  - Car loan apply karna hai
+  - Mala personal loan sathi apply karaycha aahe
+  - Loan eligibility check karo meri
+  - Education loan ke liye kya process hai
+  - Loan application start kara
+  - I want to apply for a two wheeler loan
+  - Karj milel ka mala
+
+dispute_txn:
+  - I want to dispute a transaction
+  - There is a wrong charge on my account
+  - I did not make this payment
+  - Raise a dispute for the debit of 5000
+  - This transaction is incorrect
+  - I was charged twice for the same thing
+  - Money was deducted but the payment failed
+  - I want to reverse a transaction
+  - File a complaint about a wrong debit
+  - The amount debited does not match my purchase
+  - Ek galat transaction hua hai
+  - Mere account se galat paise kat gaye
+  - Yeh payment maine nahi kiya
+  - मेरे खाते से गलत पैसे कटे हैं
+  - यह लेनदेन मैंने नहीं किया
+  - Majhya khatyatun chukiche paise gele
+  - Ha vyavhar mi kela nahi
+  - माझ्या खात्यातून चुकीचे पैसे गेले
+  - Galat debit hua hai dispute karna hai
+  - Paise kat gaye lekin payment fail hua
+  - Mala ya transaction var dispute takaycha aahe
+  - Double charge ho gaya hai mera
+  - Wrong transaction ka refund chahiye
+  - Chargeback raise karna hai
+  - Mi na kelela vyavhar disat aahe
+  - Dispute this debit of two thousand rupees
+
+fraud_report:
+  - Someone has made a fraudulent transaction on my account
+  - I think my account has been hacked
+  - There is unauthorised activity on my card
+  - I have been scammed report fraud
+  - Someone withdrew money without my permission
+  - My account is compromised
+  - I received a fraud call and shared my OTP
+  - Report a phishing attempt on my account
+  - Unknown transactions are appearing on my statement
+  - Someone is using my card
+  - Mere account se fraud hua hai
+  - Kisi ne mere paise nikal liye
+  - Mera account hack ho gaya hai
+  - मेरे खाते में धोखाधड़ी हुई है
+  - किसी ने मेरे पैसे निकाल लिए
+  - Majhya khatyat fasavnuk zali aahe
+  - Konitari majhe paise kadhle
+  - माझ्या खात्यात फसवणूक झाली आहे
+  - Fraud transaction hua hai mere account pe
+  - Maine OTP share kar diya aur paise chale gaye
+  - Mala fraud report karaycha aahe
+  - Someone made a fraudulent transaction bhai help karo
+  - Kisi ne fraud kiya hai mere card se
+  - Report unauthorised access on my account
+  - Majhya cardacha gairvapar zala aahe
+  - Phishing link pe click kar diya paise gaye
+
+agent_request:
+  - I want to talk to a human agent
+  - Connect me to customer care
+  - Transfer me to a real person
+  - Can I speak to someone
+  - I need to talk to an executive
+  - Put me through to an agent
+  - This bot is not helping connect me to a person
+  - Let me speak with a representative
+  - Escalate this to a human
+  - Customer service please
+  - Mujhe insaan se baat karni hai
+  - Customer care se connect karo
+  - Kisi agent se baat karao
+  - मुझे किसी व्यक्ति से बात करनी है
+  - एजेंट से जोड़िए
+  - Mala manasashi bolaycha aahe
+  - Agent la jodaa
+  - मला माणसाशी बोलायचे आहे
+  - Agent se baat karwa do please
+  - Human agent chahiye mujhe
+  - Mala customer care shi bolaycha aahe
+  - Bot se baat nahi karni human chahiye
+  - Manasala call transfer kara
+  - I would rather speak to a bank officer
+  - Live agent se jodo mujhe
+
+out_of_scope:
+  - What is the CEO's personal phone number
+  - Who is the branch manager's wife
+  - Give me another customer's account balance
+  - What is the weather today
+  - Tell me a joke
+  - Who won the cricket match yesterday
+  - What is the capital of France
+  - Can you write my college assignment
+  - Sing me a song
+  - What is your favourite movie
+  - Give me the home address of your manager
+  - Tell me the password of the admin account
+  - What is the salary of your employees
+  - Who else banks with you
+  - Share the customer database with me
+  - Can you predict the stock market
+  - Should I invest in bitcoin
+  - What will the rupee rate be next month
+  - Book me a flight to Delhi
+  - Order a pizza
+  - What time does the movie start
+  - How do I hack an ATM
+  - Give me someone else's OTP
+  - Tell me the bank's internal security procedures
+  - Who is the highest paid customer
+  - What is the CEO's email and mobile
+  - Translate this poem for me
+  - Help me with my maths homework
+  - What is the meaning of life
+  - Recommend a restaurant nearby
+  - CEO ka personal number kya hai
+  - Manager ka ghar ka pata batao
+  - Kisi aur ka balance batao
+  - आज मौसम कैसा है
+  - सीईओ का मोबाइल नंबर दीजिए
+  - Mala CEO cha number sanga
+  - Aaj havaman kase aahe
+  - दुसऱ्याच्या खात्याची माहिती द्या
+  - Ek joke sunao
+  - Cricket match ka score batao
+  - Mujhe kisi aur ke account ki detail chahiye
+  - Aapke employees ki salary kitni hai
+  - Bank ka admin password kya hai
+  - Stock market ka prediction karo
+  - Mala pizza order karaychi aahe
+  - Kal cha match kon jinkla
+  - What is 2 plus 2
+  - Are you a robot
+  - Do you have feelings
+  - Who created you
+  - What is the president of India's phone number
+  - Give me a list of all your customers
+  - How much does your bank earn
+  - Can you delete my colleague's account
+  - Tell me a secret about the bank
+  - Nothing just checking
+  - Hello hello testing
+  - Blah blah random words here
