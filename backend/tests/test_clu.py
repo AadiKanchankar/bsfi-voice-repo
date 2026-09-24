@@ -327,3 +327,41 @@ def test_compound_requests_reach_the_model(monkeypatch, text, expected):
     request. Both compound failures in the first evaluation run were this."""
     monkeypatch.setattr(clu, "enabled", lambda: True)
     assert clu.should_call(0.95, 0.60, 0.0, text, False)[0] is expected
+
+
+# ---------------------------------------------------------------- R4 crash
+
+def test_a_string_amount_from_the_model_cannot_crash_the_turn():
+    """Found by the latency harness on live audio, not by a unit test.
+
+    The model is free to answer `"amount": "Rs 5,000"` and it does. That
+    string used to reach dialogue.norm_amount, which compares it against
+    zero, raising TypeError and killing the turn with a 500 in the middle of
+    a call. Model output is untrusted input; it is coerced at the boundary
+    and the money path is defensive as well, because it has several callers.
+    """
+    from app.clu.schema import CLUResult
+    from app.pipeline.dialogue import norm_amount
+
+    r = CLUResult(intent="fund_transfer", confidence=0.9,
+                  entities={"amount": "Rs 5,000", "payee": "Diya"})
+    assert r.entities["amount"] == 5000.0
+    assert r.entities["payee"] == "Diya"
+
+    # An amount that cannot be read as a number is dropped, not guessed at:
+    # a wrong amount on a transfer is worse than a missing one, because a
+    # missing one makes the assistant ask.
+    assert "amount" not in CLUResult(intent="fund_transfer", confidence=0.9,
+                                     entities={"amount": "a lot"}).entities
+    assert "amount" not in CLUResult(intent="fund_transfer", confidence=0.9,
+                                     entities={"amount": "-5"}).entities
+    # A negative amount is dropped rather than made positive. An earlier
+    # version of the coercion stripped the minus sign, turning "-5" into 5,
+    # which is a wrong instruction rather than a missing one.
+    assert "amount" not in CLUResult(intent="fund_transfer", confidence=0.9,
+                                     entities={"amount": -5}).entities
+
+    # And the money path degrades rather than raising, whatever reaches it.
+    for bad in ("5000", "a lot", None, "", [], {}):
+        assert isinstance(norm_amount(bad), float)
+    assert norm_amount("5000") == norm_amount(5000)

@@ -16,7 +16,8 @@ EXPECTED = {
                            "handover:claim", "metrics:read"},
     "compliance_officer": {"trace:read_own", "trace:read_any", "ledger:verify",
                            "ledger:export", "handover:read", "metrics:read",
-                           "consent:withdraw"},
+                           "consent:withdraw", "compliance:search",
+                           "recording:list", "recording:play"},
     "admin":              set(rbac.PERMISSIONS),
 }
 
@@ -26,6 +27,20 @@ def test_role_matrix_is_exactly_as_documented(role):
     granted = {p for p in rbac.PERMISSIONS if rbac.allowed(role, p)}
     assert granted == EXPECTED[role], (
         f"{role}: unexpected {granted - EXPECTED[role]}, missing {EXPECTED[role] - granted}")
+
+
+def test_nobody_below_compliance_may_play_a_recording():
+    """R1 keeps call audio, so who may hear it is now part of the matrix.
+
+    The check also lives inside recordings.read, so a future caller that
+    forgets the endpoint dependency still cannot decrypt anything.
+    """
+    for role in ("customer", "agent"):
+        assert rbac.allowed(role, "recording:play") is False
+        assert rbac.allowed(role, "recording:list") is False
+        assert rbac.allowed(role, "compliance:search") is False
+    for role in ("compliance_officer", "admin"):
+        assert rbac.allowed(role, "recording:play") is True
 
 
 def test_customer_cannot_export_the_ledger():

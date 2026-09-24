@@ -250,7 +250,7 @@ def run_biometrics(conn) -> dict:
 
 # ---------------------------------------------------------------- driver
 
-def run_all(conn=None, write: bool = True) -> dict:
+def run_all(conn=None, write: bool = True, with_latency: bool = True) -> dict:
     from .. import db
     conn = conn or db.init_db()
     data = load_set()
@@ -274,6 +274,16 @@ def run_all(conn=None, write: bool = True) -> dict:
                           else {"available": False,
                                 "reason": "no traces recorded yet; run the scenario tests"})
     results["n_traces_for_latency"] = len(traces)
+
+    # The per-stage table above is measured on the text path, where no speech
+    # recognition and no synthesis run. It is true and it is not the number a
+    # caller feels. R4 adds the audio path end to end; see eval/latency.py.
+    if with_latency:
+        from . import latency as latency_mod
+        results["end_to_end"] = latency_mod.run(conn)
+    else:
+        results["end_to_end"] = {"available": False,
+                                 "reason": "skipped, pass with_latency=True to measure"}
 
     # Write back the calibrated operating points so the running system uses the
     # numbers that were actually measured, not the cold-start defaults.
@@ -491,6 +501,11 @@ def render_markdown(r: dict) -> str:
         for name, v in sorted(lat.items()):
             label = "**turn total**" if name == "_turn_total" else name
             out.append(f"| {label} | {v['n']} | {v['p50_ms']} | {v['p95_ms']} |\n")
+
+    # The table above is the text path. The audio path is what a caller feels.
+    from . import latency as latency_mod
+    out.append(latency_mod.render_markdown(r.get("end_to_end", {"available": False,
+               "reason": "not run"})))
 
     out.append("\n## Reproducing this page\n\n```\nmake seed\nmake eval-audio\nmake eval\n```\n")
     return "".join(out)

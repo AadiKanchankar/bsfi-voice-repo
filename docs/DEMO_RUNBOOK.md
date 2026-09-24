@@ -164,6 +164,28 @@ action back. Click **Confirm read-back**.
 > marks it SIMULATED. Watch what happens if I decline the read-back instead:
 > nothing is done to the account and the decision is recorded as refused.
 
+### Beat 6b. Interrupting the read-back
+
+Ask for the transfer again, and this time click **Stop speaking** while the
+read-back is playing, then say yes.
+
+> I cut it off before it told me the amount and the payee. So when I say yes
+> a moment later, what am I agreeing to? Nothing, is the answer. The server
+> treats an interrupted read-back as not confirmed, drops the pending
+> transaction and says so. Watch the balance: it has not moved. The ledger
+> records the interruption, including how much of the reply I actually heard
+> before I cut it off.
+
+The mirror of it is worth one sentence: if I interrupt *after* confirming,
+the transfer stands, because the action commits before the success message is
+spoken. The money moved and I simply did not hear us say so. Both directions
+are covered by tests, because a bank that is unsure whether something
+happened has a worse problem than a slow assistant.
+
+**Stop speaking** and **End call** work in every state. The state is printed
+under the session panel and it comes from the server, not the browser: that
+is what stops two replies playing over each other.
+
 ### Beat 7. Tier 3
 
 > Someone has made a fraudulent transaction on my account
@@ -175,6 +197,36 @@ action back. Click **Confirm read-back**.
 > agent receives the whole conversation so the customer does not repeat
 > themselves, and the packet says explicitly that no automated action was
 > taken.
+
+**Then stay on the line.** This is the part that changed: the assistant used
+to go quiet here, which is the worst possible moment for it.
+
+> It gives me a case reference, read out digit by digit so I can write it
+> down. It offers one thing it is allowed to do while I wait: freeze the
+> card. That is reversible and it resolves nothing, which is why it is the
+> only action on the whitelist. A refund would resolve the dispute, and
+> automating a resolution is exactly what tier 3 forbids, so it is in the
+> config file marked never.
+
+Say yes to the freeze, then answer the intake questions it asks.
+
+> It is asking what the agent would have asked anyway: when I noticed, how
+> much, whether I still have the card. Those go on the case, so nobody asks
+> me twice.
+
+Open `/agent` on the second laptop and click Accept.
+
+> The agent sees the intake answers, the risk reasoning and the redacted
+> transcript. Identifiers are tokens, not values: the agent sees what the
+> compliance record sees. I type a reply here and the caller hears it in
+> their own language, through the same normaliser, so an amount I type is
+> read in the Indian system without me having to know that.
+
+Close the case with an outcome.
+
+> Every step of that was a ledger record. Case opened, card frozen, intake
+> taken, agent accepted, agent spoke, case closed. Verify the chain and it
+> is still green.
 
 Then ask an innocent question:
 
@@ -273,6 +325,33 @@ Then ask your balance again, to show the session is not poisoned:
 > Asking for advice is not a risk signal, so unlike a fraud report it does
 > not raise the session floor. Getting that wrong locked the caller out of
 > their own balance for the rest of the call.
+
+### Beat 11b. "Are you a real person?"
+
+Ask it straight out, in the middle of the call.
+
+> It says it is an automated assistant and offers to put me through to a
+> colleague. It never claims otherwise, and that answer is produced before
+> any of the conversational styling can soften it. This is the same trust
+> question the whole project is about, so it is a test rather than a prompt
+> we hope holds.
+
+### Beat 11c. What it actually says out loud
+
+Worth pointing at the numbers rather than the voice:
+
+> A balance of one lakh fifty thousand rupees, not one hundred fifty
+> thousand. An IFSC read letter by letter, because nobody can write down a
+> code pronounced as a word. A card's last four in pairs. An OTP one digit
+> at a time. Most of what sounded wrong before was not the voice model, it
+> was the text we handed it.
+
+And the rule about fillers, if anyone asks why it says "let me check that":
+
+> At most one per turn, about a third of the time, never twice in a row, and
+> never anywhere near digits, money, a read-back, a refusal or a tier 2
+> turn. A caller writing down six digits does not need us sounding
+> thoughtful in the middle of them.
 
 ## Voice settings
 

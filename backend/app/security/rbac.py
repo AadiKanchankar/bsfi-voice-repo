@@ -28,6 +28,12 @@ PERMISSIONS: dict[str, set[str]] = {
     "handover:claim":   {"agent", "admin"},
     "metrics:read":     {"compliance_officer", "admin", "agent"},
     "consent:withdraw": {"customer", "compliance_officer", "admin"},
+    # Listing a call's recordings is an audit action; playing one is a
+    # stricter check still, and it lives in recordings.read so that every
+    # caller inherits it rather than only this endpoint.
+    "compliance:search": {"compliance_officer", "admin"},
+    "recording:list":   {"compliance_officer", "admin"},
+    "recording:play":   {"compliance_officer", "admin"},
     "admin:reset":      {"admin"},
 }
 

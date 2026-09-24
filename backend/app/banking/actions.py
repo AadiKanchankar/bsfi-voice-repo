@@ -435,6 +435,81 @@ def investment_advice(trace: ComplianceTrace) -> dict:
 
 # ---------------------------------------------------------------- tier 3
 
+# What each intent is called when the assistant has to name it out loud.
+# Used to offer "did you mean X or Y" in the caller's own terms rather than
+# reading an internal label at them.
+_INTENT_WORDS = {
+    "get_balance": {"en": "your balance", "hi": "आपका बैलेंस", "mr": "तुमचा बॅलन्स"},
+    "mini_statement": {"en": "your recent transactions",
+                       "hi": "आपके हाल के लेनदेन", "mr": "तुमचे अलीकडील व्यवहार"},
+    "cheque_status": {"en": "a cheque", "hi": "एक चेक", "mr": "एक धनादेश"},
+    "branch_ifsc": {"en": "a branch or IFSC code",
+                    "hi": "शाखा या IFSC कोड", "mr": "शाखा किंवा IFSC कोड"},
+    "product_info": {"en": "our rates and products",
+                     "hi": "हमारी दरें और उत्पाद", "mr": "आमचे दर आणि उत्पादने"},
+    "block_card": {"en": "blocking a card", "hi": "कार्ड ब्लॉक करना",
+                   "mr": "कार्ड ब्लॉक करणे"},
+    "fund_transfer": {"en": "a transfer", "hi": "एक भुगतान", "mr": "एक व्यवहार"},
+    "investment_info": {"en": "your investments", "hi": "आपके निवेश",
+                        "mr": "तुमची गुंतवणूक"},
+}
+
+
+def clarify(trace: ComplianceTrace, options: list[str], attempt: int) -> dict:
+    """Ask one short question instead of transferring the call.
+
+    Two shapes, depending on what is unclear. If the reading narrowed to a
+    couple of plausible intents, name them and let the caller pick. If it did
+    not narrow at all, say plainly that it was not understood and ask again,
+    because offering a guess nobody made is worse than admitting it.
+
+    Never more than two options. A spoken menu of five is a phone tree, and
+    the whole point of this system is not being one.
+    """
+    named = [_INTENT_WORDS[o] for o in options if o in _INTENT_WORDS][:2]
+
+    if len(named) >= 2:
+        a, b = named[0], named[1]
+        reply = {
+            "en": f"I can help with {a['en']} or {b['en']}. Which would you like?",
+            "hi": f"मैं {a['hi']} या {b['hi']} में मदद कर सकता हूँ। आप क्या चाहेंगे?",
+            "mr": f"मी {a['mr']} किंवा {b['mr']} मध्ये मदत करू शकतो. तुम्हाला काय हवे?",
+        }
+    elif named:
+        a = named[0]
+        reply = {
+            "en": f"Did you want {a['en']}?",
+            "hi": f"क्या आपको {a['hi']} चाहिए?",
+            "mr": f"तुम्हाला {a['mr']} हवे आहे का?",
+        }
+    else:
+        reply = {
+            "en": "Sorry, I did not quite catch that. Could you say it again?",
+            "hi": "माफ़ कीजिए, मैं समझ नहीं पाया। क्या आप दोबारा कह सकते हैं?",
+            "mr": "माफ करा, मला नीट समजले नाही. तुम्ही पुन्हा सांगाल का?",
+        }
+    return {"action_taken": "clarify",
+            "result": {"options": options[:2], "attempt": attempt},
+            "reply": reply}
+
+
+def split_compound(trace: ComplianceTrace, first: str, lang: str) -> dict:
+    """Two things were asked at once. Say so, and take them in order.
+
+    Better than clarifying: the caller told us both halves, so asking which
+    one they meant is asking them to repeat themselves. Answer the first and
+    say the second is coming.
+    """
+    a = _INTENT_WORDS.get(first, {}).get(lang) or _INTENT_WORDS.get(first, {}).get("en", "that")
+    return {"action_taken": "split_compound",
+            "result": {"handling_first": first},
+            "reply": {
+                "en": f"You asked for two things. Let me start with {a}.",
+                "hi": f"आपने दो चीज़ें पूछी हैं। पहले {a} बताता हूँ।",
+                "mr": f"तुम्ही दोन गोष्टी विचारल्या. आधी {a} सांगतो.",
+            }}
+
+
 def escalate(trace: ComplianceTrace, reason: str, queue_position: int = 1) -> dict:
     return {
         "action_taken": "escalate_to_agent",
@@ -484,13 +559,23 @@ def readback(summary_en: str, summary_hi: str, summary_mr: str) -> dict:
 
 def readback_summary(intent: str, slots: dict) -> tuple[str, str, str]:
     if intent == "block_card":
+        # Two different sentences, not one sentence with a hole in it. The
+        # fallback used to be substituted into the phrase "the card ending
+        # {x}", which produced "the card ending on file": ungrammatical, and
+        # on the most safety-critical sentence the assistant ever speaks,
+        # the one a caller says yes to before a card is blocked.
         l4 = slots.get("card_last4")
-        en = speech_digits(l4, "en") if l4 else "on file"
-        hi = speech_digits(l4, "hi") if l4 else "आपके"
-        mr = speech_digits(l4, "mr") if l4 else "तुमचे"
-        return (f"You want me to permanently block the card ending {en}.",
-                f"आप {hi} पर खत्म होने वाला कार्ड हमेशा के लिए बंद कराना चाहते हैं।",
-                f"तुम्हाला {mr} वर संपणारे कार्ड कायमचे बंद करायचे आहे.")
+        if l4:
+            return (f"You want me to permanently block the card ending "
+                    f"{speech_digits(l4, 'en')}.",
+                    f"आप {speech_digits(l4, 'hi')} पर खत्म होने वाला कार्ड हमेशा के "
+                    f"लिए बंद कराना चाहते हैं।",
+                    f"तुम्हाला {speech_digits(l4, 'mr')} वर संपणारे कार्ड कायमचे बंद "
+                    f"करायचे आहे.")
+        return ("You want me to permanently block the card registered on your "
+                "account.",
+                "आप अपने खाते में पंजीकृत कार्ड हमेशा के लिए बंद कराना चाहते हैं।",
+                "तुम्हाला तुमच्या खात्यावर नोंदणीकृत कार्ड कायमचे बंद करायचे आहे.")
     if intent == "fund_transfer":
         a, p = slots.get("amount", 0), slots.get("payee", "the payee")
         return (f"You want me to send {speech_amount(a, 'en')} to {p}.",

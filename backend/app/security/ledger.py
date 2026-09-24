@@ -98,6 +98,31 @@ def _check_record(row: sqlite3.Row, expected_prev: str) -> str | None:
     return None
 
 
+def verify_record(conn: sqlite3.Connection, idx: int) -> dict:
+    """Verify one record in place, for a per-row status in the dashboard.
+
+    This checks the three properties a single record can carry on its own:
+    that it links to the hash its predecessor actually stores, that its hash
+    binds its own payload and timestamp, and that the signature matches.
+
+    It is deliberately not a substitute for `verify`. A record can pass here
+    while the chain is broken further back, so the dashboard shows this
+    beside a whole-chain result and never instead of one.
+    """
+    row = conn.execute("SELECT * FROM ledger WHERE idx=?", (idx,)).fetchone()
+    if row is None:
+        return {"ok": False, "reason": "no such record"}
+    if idx == 0:
+        prev = LEDGER_GENESIS_HASH
+    else:
+        before = conn.execute("SELECT hash FROM ledger WHERE idx=?", (idx - 1,)).fetchone()
+        if before is None:
+            return {"ok": False, "reason": "predecessor missing"}
+        prev = before["hash"]
+    failed = _check_record(row, prev)
+    return {"ok": failed is None, "reason": failed}
+
+
 def _rows(conn: sqlite3.Connection, lo: int, hi: int) -> Iterable[sqlite3.Row]:
     return conn.execute(
         "SELECT * FROM ledger WHERE idx >= ? AND idx <= ? ORDER BY idx", (lo, hi))

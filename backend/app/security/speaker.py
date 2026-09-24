@@ -45,33 +45,49 @@ def embed_audio(data: bytes | np.ndarray) -> np.ndarray:
 
 
 def enrol(conn: sqlite3.Connection, customer_id: str, clips: list[bytes | np.ndarray],
-          source: str = "synthetic") -> dict:
+          source: str = "synthetic", consent_ref: str | None = None,
+          audio_consent: bool = False) -> dict:
     if len(clips) < 3:
         raise ValueError("enrolment needs three utterances")
     embeddings = np.stack([embed_audio(c) for c in clips])
     mean = embeddings.mean(axis=0)
     mean = mean / (np.linalg.norm(mean) + 1e-12)
-    conn.execute(
-        "INSERT OR REPLACE INTO speakers (customer_id, embedding, n_clips, source, enrolled_at)"
-        " VALUES (?,?,?,?,?)",
-        (customer_id, mean.astype(np.float32).tobytes(), len(clips), source,
-         utcnow().isoformat()))
-    conn.commit()
+    # Persisted through the registry: a durable voice_enrollments row with the
+    # embedding encrypted at rest, plus the speakers cache. Writing only to
+    # speakers is what made an enrolment vanish on restart.
+    pairwise_now = [float(embeddings[i] @ embeddings[j])
+                    for i in range(len(embeddings)) for j in range(i + 1, len(embeddings))]
+    from ..banking import registry
+    saved = registry.save_enrollment(
+        conn, customer_id, mean, model_id=model_id(), n_clips=len(clips),
+        quality=round(float(np.mean(pairwise_now)), 4) if pairwise_now else None,
+        source=source, consent_ref=consent_ref, audio_consent=audio_consent)
+    if audio_consent:
+        from . import recordings as _rec
+        _rec.store_enrolment_audio(conn, saved["enrollment_id"],
+                                   [c if isinstance(c, bytes) else b"" for c in clips],
+                                   consent=True)
     # Self-consistency of the enrolment clips, reported so a bad enrolment is
     # visible at enrolment time rather than at verification time.
     pairwise = [float(embeddings[i] @ embeddings[j])
                 for i in range(len(embeddings)) for j in range(i + 1, len(embeddings))]
     return {"customer_id": customer_id, "n_clips": len(clips), "source": source,
             "mean_pairwise_cosine": round(float(np.mean(pairwise)), 4),
+            "enrollment_id": saved["enrollment_id"],
+            "audio_consent": bool(audio_consent),
             "model_id": model_id()}
 
 
 def get_enrolment(conn: sqlite3.Connection, customer_id: str) -> tuple[np.ndarray, str] | None:
+    """The enrolment mean. Falls back to the encrypted durable row when the
+    cache is cold, which is what makes verification survive a restart."""
     row = conn.execute("SELECT embedding, source FROM speakers WHERE customer_id=?",
                        (customer_id,)).fetchone()
-    if not row:
-        return None
-    return np.frombuffer(row["embedding"], dtype=np.float32), row["source"]
+    if row:
+        return np.frombuffer(row["embedding"], dtype=np.float32), row["source"]
+    from ..banking import registry
+    vec = registry.load_enrollment(conn, customer_id)
+    return (vec, "restored") if vec is not None else None
 
 
 def verify(conn: sqlite3.Connection, customer_id: str,

@@ -23,3 +23,7 @@ Testing-photos-Videos/voice-trials/
 graphify-out/.graphify_*
 graphify-out/.chunk*
 graphify-out/cache/
+
+# Generated A/B voice samples for the blind listening check.
+
+listening-check/

@@ -37,13 +37,41 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(os.environ.get("BFSI_DATA_DIR", ROOT / "data"))
 MODEL_DIR = Path(os.environ.get("BFSI_MODEL_DIR", ROOT / "models"))
 RUNTIME_DIR = Path(os.environ.get("BFSI_RUNTIME_DIR", ROOT / "runtime"))
-DB_PATH = Path(os.environ.get("BFSI_DB", RUNTIME_DIR / "bfsi.db"))
+def _sqlite_path_from_url(url: str | None) -> Path | None:
+    """The file a SQLite URL points at, or None for any other dialect."""
+    if not url or not url.startswith("sqlite"):
+        return None
+    tail = url.split("://", 1)[1]
+    return Path(tail[1:] if tail.startswith("/") else tail).expanduser()
+
+
+# BFSI_DB_URL has to win here too, not only for migrations. The raw sqlite3
+# connections and the SQLModel engine are two doors onto one file, and before
+# this they could be pointed at two different files: an end-to-end run that
+# set BFSI_DB_URL to a throwaway copy migrated the copy and then read the real
+# database. One setting decides where the data lives, as db_url() claims.
+DB_PATH = (_sqlite_path_from_url(os.environ.get("BFSI_DB_URL"))
+           or Path(os.environ.get("BFSI_DB", RUNTIME_DIR / "bfsi.db")))
 VAULT_DIR = RUNTIME_DIR / "vault"          # AES-256-GCM encrypted PII vault
 POLICY_KB_DIR = DATA_DIR / "policy_kb"
 SEED_DIR = DATA_DIR / "seed"
 EVAL_DIR = DATA_DIR / "eval"
 
 SEED = 20260920            # fixed seed, all synthetic data is reproducible
+
+
+def db_url() -> str:
+    """One place decides where the data lives.
+
+    Default is the SQLite file. Set BFSI_DB_URL to point at PostgreSQL and
+    nothing in the application changes: app/models.py is written portably and
+    Alembic migrates either dialect.
+    """
+    explicit = os.environ.get("BFSI_DB_URL")
+    if explicit:
+        return explicit
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{DB_PATH}"
 
 # ---------------------------------------------------------------- A1 language id
 LANGUAGES = ["en", "hi", "mr"]
@@ -117,6 +145,14 @@ CLU_TIMEOUT_S = float(os.environ.get("BFSI_CLU_TIMEOUT", "12"))
 # a wait instruction, not a failure, so it is retried rather than dropped.
 CLU_MAX_RETRIES = int(os.environ.get("BFSI_CLU_MAX_RETRIES", "3"))
 CLU_MAX_BACKOFF_S = float(os.environ.get("BFSI_CLU_MAX_BACKOFF", "30"))
+# A hard ceiling on how long the CLU may hold up one turn, across every
+# retry. Retrying a 429 is right for a batch evaluation and wrong inside a
+# live call: with three retries and a thirty second cap, one turn was
+# measured waiting 96 seconds while a caller sat on the line. The layer is
+# optional and the deterministic reading is always available, so when the
+# budget runs out the turn continues without it. The evaluation harness
+# raises this deliberately, because there the wait is free.
+CLU_DEADLINE_S = float(os.environ.get("BFSI_CLU_DEADLINE", "3.0"))
 LLM_API_BASE = os.environ.get("BFSI_LLM_API_BASE", "https://api.groq.com/openai/v1")
 LLM_API_KEY_ENV = "BFSI_LLM_API_KEY"
 
@@ -277,6 +313,9 @@ TDCF_P_SPOOF = 0.05
 # rule is that no real personal data lives in it, and a name is personal data.
 PRESENTER_ID = "CUST9001"
 PRESENTER_NAME = os.environ.get("BFSI_PRESENTER_NAME", "Demo Presenter")
+# What the presenter says out loud to identify themselves on a call. Only the
+# last four ever reach the database; see registry.mask_mobile.
+PRESENTER_MOBILE = os.environ.get("BFSI_PRESENTER_MOBILE", "9820000001")
 
 # ---------------------------------------------------------------- audio / ASR
 SAMPLE_RATE = 16000
@@ -285,8 +324,95 @@ ASR_COMPUTE_TYPE = os.environ.get("BFSI_ASR_COMPUTE", "int8")
 ASR_DEVICE = os.environ.get("BFSI_ASR_DEVICE", "cpu")
 USE_INDIC_CONFORMER = os.environ.get("BFSI_INDIC_CONFORMER", "0") == "1"  # GPU flag
 VAD_THRESHOLD = 0.5
+# Endpointing. Both of these already sit where R4 asks them to: 500 to 700 ms
+# of silence before deciding the caller has finished, and roughly 250 to
+# 300 ms of sustained speech before treating incoming audio as real rather
+# than a cough or the assistant's own echo. They were not changed for R4,
+# because changing a tuned number without a measurement to justify it is how
+# tuning gets worse.
+#
+# What has NOT been measured is the false cut-off rate: how often the
+# endpoint fires while a caller is still mid sentence. The evaluation clips
+# are pre-trimmed single utterances with no natural pauses in them, so the
+# question cannot be asked of this data set. It needs the human recordings
+# R5 asks the team for, and a too-eager endpoint that talks over callers is
+# worse than a slow one, so it should be measured before either value moves.
 VAD_MIN_SILENCE_MS = 500
-VAD_MIN_SPEECH_MS = 250
+VAD_MIN_SPEECH_MS = 250      # also the barge-in threshold on the client
+
+# ---------------------------------------------------------------- R6 protective
+#
+# Actions the assistant may take on an escalated call, before a human picks
+# it up. The tier 3 rule forbids automating a RESOLUTION: a refund, a
+# reversal, a dispute outcome, a transfer. Reducing harm is a different
+# thing, and this list is where that difference is written down rather than
+# argued about per case.
+#
+# Every entry must be reversible in one step and must resolve nothing. A
+# frozen card can be unfrozen and the fraud is still unresolved; a refund
+# cannot be unpaid and the dispute is over.
+#
+# ONLY `freeze_card` IS ENABLED. The others are written out because the
+# question "why not this one too" deserves an answer in the file rather than
+# in someone's memory, and because enabling one is a change request item
+# needing sign-off, not an edit.
+PROTECTIVE_ACTIONS = [
+    {"name": "freeze_card", "reversible": True,
+     "reasons": ["fraud_report", "dispute_txn"],
+     "note": "Temporary block on the card. Reverses in one step, resolves "
+             "nothing, and stops the bleeding while the caller waits."},
+    {"name": "lower_daily_limit", "reversible": True,
+     "reasons": ["fraud_report"],
+     "note": "NOT ENABLED. Reversible and harm-reducing, so it is a "
+             "reasonable candidate, but it changes a limit the caller may "
+             "rely on within the hour and nobody has signed it off."},
+    {"name": "block_payee", "reversible": True,
+     "reasons": ["fraud_report"],
+     "note": "NOT ENABLED. Same shape as above. Needs sign-off."},
+    {"name": "reverse_transaction", "reversible": False,
+     "reasons": [],
+     "note": "NEVER. This resolves the dispute, which is precisely what "
+             "tier 3 forbids automating. Listed so that nobody adds it "
+             "later thinking it was merely overlooked."},
+]
+# The whitelist is a list; this is the gate. Adding a name here without a
+# DECISIONS entry and sign-off is the thing the change request asks about.
+PROTECTIVE_ACTIONS_ENABLED = set(
+    os.environ.get("BFSI_PROTECTIVE_ACTIONS", "freeze_card").split(","))
+
+# ---------------------------------------------------------------- R6 clarify
+# Asking "did you mean X or Y" is cheaper for everyone than a transfer, but
+# only up to a point: a caller asked the same thing twice with no progress
+# wants a person, and so does the queue. Two attempts, then escalate.
+MAX_CLARIFICATIONS = int(os.environ.get("BFSI_MAX_CLARIFICATIONS", "2"))
+
+# ---------------------------------------------------------------- providers
+#
+# R5. Cloud speech providers sit on top of the local stack, never in place of
+# it. Selection is per language because the right answer differs: a vendor
+# built for Indian languages is the better choice for Hindi and Marathi and
+# may not be for English. Anything not named here uses the local stack.
+#
+# Keys live in .env and nowhere else. Without one the provider reports itself
+# unavailable and every call falls back, which is why a fresh clone with no
+# keys behaves exactly like the frozen snapshot.
+SARVAM_API_KEY_ENV = "BFSI_SARVAM_API_KEY"
+# Deliberately the same name the TTS engine already reads. An earlier draft
+# of this block invented a second one, which would have had the provider
+# report "no key" while the engine below was using the key that was set.
+ELEVENLABS_API_KEY_ENV = "BFSI_ELEVENLABS_API_KEY"
+
+TTS_PROVIDER_BY_LANGUAGE = {
+    "en": os.environ.get("BFSI_TTS_PROVIDER_EN", "local"),
+    "hi": os.environ.get("BFSI_TTS_PROVIDER_HI", "local"),
+    "mr": os.environ.get("BFSI_TTS_PROVIDER_MR", "local"),
+}
+# How long a cloud provider may take to produce its first audio before the
+# turn gives up on it and speaks locally. A caller waiting on a slow vendor
+# is no better off than one waiting on a broken vendor, and R4 measured the
+# local first phrase at about 1.3 s, so a cloud call that cannot beat that
+# is not earning the data leaving the machine.
+TTS_FALLBACK_TTFB_MS = float(os.environ.get("BFSI_TTS_FALLBACK_TTFB_MS", "1500"))
 
 # ---------------------------------------------------------------- TTS
 # Three distinct Piper voices stand in for three enrolled speakers. Enrolment
@@ -373,6 +499,31 @@ JWT_SECRET = os.environ.get("BFSI_JWT_SECRET", "demo-jwt-secret-not-for-producti
 JWT_ALG = "HS256"
 JWT_TTL_SECONDS = 8 * 3600
 ROLES = ["customer", "agent", "compliance_officer", "admin"]
+
+# ---------------------------------------------------------------- recordings
+# Change Request 02 reverses an earlier rule. The original spec dropped raw
+# audio after transcription. Real bank helplines record calls, so audio is
+# now kept, under conditions that are enforced rather than promised:
+#
+#   * nothing is written until the caller has heard the recording notice and
+#     not objected (calls.notice_completed and calls.recording_consent)
+#   * every file is AES-256-GCM encrypted; there is a test asserting no
+#     unencrypted audio exists anywhere under the runtime directory
+#   * withdrawal purges the call's recordings and appends a purge record
+#   * only a compliance officer can play one back, and each playback is an
+#     access-log row and a ledger record
+#
+# See DECISIONS.md D21.
+# Overridable so an end-to-end run writes its audio into a throwaway
+# directory rather than the one a presenter is about to demonstrate from.
+RECORDINGS_DIR = Path(os.environ.get("BFSI_RECORDINGS_DIR",
+                                     str(RUNTIME_DIR / "recordings")))
+ENROLMENT_AUDIO_DIR = Path(os.environ.get("BFSI_ENROLMENT_AUDIO_DIR",
+                                          str(RUNTIME_DIR / "enrolment_audio")))
+RECORDING_RETENTION_DAYS = int(os.environ.get("BFSI_RECORDING_RETENTION_DAYS", "90"))
+# Enrolment audio is biometric source material. The embedding is always kept;
+# the audio it came from only with a separate explicit yes.
+ENROLMENT_AUDIO_DEFAULT_CONSENT = False
 
 # ---------------------------------------------------------------- consent / retention
 CONSENT_PURPOSE = (

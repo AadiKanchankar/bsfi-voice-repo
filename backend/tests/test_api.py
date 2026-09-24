@@ -104,7 +104,17 @@ def test_session_consent_writes_the_first_ledger_record(client):
     assert out["ledger_index"] == 0 and len(out["ledger_hash"]) == 64
     assert out["retention_days"] > 0
     v = client.post("/ledger/verify", headers=token(client, "compliance_officer"))
-    assert v.json()["ok"] is True and v.json()["records_checked"] == 1
+    assert v.json()["ok"] is True
+
+    # Consent is record 0 and nothing precedes it. Opening a call also records
+    # the move into GREETING now, so the count is no longer 1; what the test
+    # is named for is the ordering, and that is asserted directly rather than
+    # inferred from there being only one record.
+    records = client.get("/ledger/records?limit=5",
+                         headers=token(client, "compliance_officer")).json()["records"]
+    kinds = [r["kind"] for r in sorted(records, key=lambda r: r["idx"])]
+    assert kinds[0] == "consent", kinds
+    assert kinds[1] == "call_state", kinds
 
 
 def test_verify_reports_a_tamper_through_the_api(client):
@@ -133,3 +143,48 @@ def test_metrics_shape(client):
 @pytest.mark.parametrize("role", ROLES)
 def test_health_needs_nothing(client, role):
     assert client.get("/health").status_code == 200
+
+
+# ---------------------------------------------------------------- R1 endpoints
+
+def test_registering_a_customer_stores_only_the_masked_mobile(client):
+    r = client.post("/customers", json={"name": "New Caller", "mobile": "9822098765"},
+                    headers=token(client, "customer"))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mobile_masked"] == "XXXXXX8765"
+    assert "9822098765" not in r.text
+
+    listed = client.get("/customers", headers=token(client, "customer")).json()["customers"]
+    assert body["customer_id"] in [c["customer_id"] for c in listed]
+
+
+def test_an_anonymous_call_is_identified_over_http(client):
+    reg = client.post("/customers", json={"name": "Caller", "mobile": "9822011111"},
+                      headers=token(client, "customer")).json()
+    s = client.post("/session/consent", json={"accepted": True},
+                    headers=token(client, "customer")).json()
+
+    out = client.post(f"/session/{s['session_id']}/identify", json={"identifier": "9822011111"},
+                      headers=token(client, "customer"))
+    assert out.status_code == 200, out.text
+    assert out.json()["customer_id"] == reg["customer_id"]
+
+    # Identifying twice is a conflict, not a silent reassignment.
+    again = client.post(f"/session/{s['session_id']}/identify",
+                        json={"identifier": reg["customer_id"]},
+                        headers=token(client, "customer"))
+    assert again.status_code == 409
+
+
+def test_only_a_compliance_officer_may_list_or_play_recordings(client):
+    for role in ("customer", "agent"):
+        assert client.get("/calls/CALL1/recordings",
+                          headers=token(client, role)).status_code == 403
+        assert client.get("/recordings/REC1",
+                          headers=token(client, role)).status_code == 403
+    # Authorised, and honest that there is nothing there.
+    assert client.get("/calls/CALL1/recordings",
+                      headers=token(client, "compliance_officer")).status_code == 200
+    assert client.get("/recordings/REC1",
+                      headers=token(client, "compliance_officer")).status_code == 404

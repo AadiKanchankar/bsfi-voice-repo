@@ -33,7 +33,8 @@ import urllib.error
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from ..config import (CLU_MAX_BACKOFF_S, CLU_MAX_RETRIES, CLU_MAX_TOKENS,
+from ..config import (CLU_DEADLINE_S, CLU_MAX_BACKOFF_S, CLU_MAX_RETRIES,
+                      CLU_MAX_TOKENS,
                       CLU_MODEL, CLU_PROVIDER, CLU_TEMPERATURE, CLU_TIMEOUT_S,
                       LLM_API_BASE, LLM_API_KEY_ENV)
 from .prompt import PROMPT_VERSION, SYSTEM, build_user_prompt, example_messages
@@ -285,7 +286,17 @@ class OpenAICompatibleProvider:
                 if exc.code == 429 and attempt < CLU_MAX_RETRIES:
                     # A 429 is a wait instruction. Honour Retry-After when the
                     # endpoint sends one, otherwise back off exponentially.
+                    #
+                    # But not past the deadline. A caller is on the line and
+                    # this layer is optional: the deterministic reading is
+                    # always there. Without this ceiling one turn was measured
+                    # waiting 96 seconds on a free tier's rate limit.
                     wait = _retry_after(exc, detail, attempt)
+                    spent = time.perf_counter() - t0
+                    if spent + wait > CLU_DEADLINE_S:
+                        last_error = (f"{last_error} (gave up after {spent:.1f}s, "
+                                      f"deadline {CLU_DEADLINE_S}s)")
+                        break
                     time.sleep(wait)
                     retries += 1
                     continue

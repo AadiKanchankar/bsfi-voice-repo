@@ -18,11 +18,14 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from .capabilities import CapabilityStatus, status_of
 
-Decision = Literal["automated", "refused", "escalated"]
+# R6 adds `clarify` between automating and escalating. The system was
+# handing compound and ambiguous requests to a human because it was not
+# confident, when what it actually needed was to ask one short question.
+Decision = Literal["automated", "clarify", "refused", "escalated"]
 
 
 def utcnow() -> datetime:
@@ -88,6 +91,12 @@ class AuthOutcome(BaseModel):
 
 
 class ComplianceTrace(BaseModel):
+    # The cancel token for the turn this trace belongs to, if any. A private
+    # attribute so it never reaches model_dump and therefore never reaches
+    # the stored trace or the ledger: it is control state for one turn in
+    # flight, not evidence about the call. See call.py.
+    _cancel: object | None = PrivateAttr(default=None)
+
     trace_id: UUID = Field(default_factory=uuid4)
     session_id: UUID
     turn_index: int
@@ -169,6 +178,13 @@ class _StageCtx:
         self.record: StageRecord | None = None
 
     def __enter__(self) -> StageRecord:
+        # Cooperative cancellation, checked once per stage. This is the only
+        # place every stage passes through, so one check here cancels a
+        # superseded turn at the next boundary rather than letting it run to
+        # completion and throwing the answer away.
+        cancel = getattr(self.trace, "_cancel", None)
+        if cancel is not None:
+            cancel.check()
         self._t0 = time.perf_counter()
         self.record = StageRecord(
             stage=self.name,

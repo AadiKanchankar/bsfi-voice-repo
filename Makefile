@@ -15,8 +15,10 @@ export HF_HUB_DISABLE_XET := 1
 export PYTHONPATH := $(CURDIR)/backend
 export TOKENIZERS_PARALLELISM := false
 
-.PHONY: help setup models seed demo backend frontend test test-fast eval eval-audio \
-        diagrams tamper restore verify clean distclean check-honesty \
+.PHONY: help setup models seed demo backend frontend test test-fast e2e e2e-setup \
+        eval eval-audio latency listening diagrams tamper restore verify clean \
+        distclean \
+        check-honesty \
         clu-eval clu-models clu-check
 
 help:
@@ -26,6 +28,8 @@ help:
 	@echo "demo         run backend and frontend together"
 	@echo "test         full pytest suite"
 	@echo "test-fast    everything except the tests that load speech models"
+	@echo "e2e          browser tests for the dashboard (run e2e-setup once first)"
+	@echo "listening    render A/B voice pairs for the blind listening check"
 	@echo "eval-audio   render the evaluation set to audio with Piper"
 	@echo "eval         run the metrics harness and regenerate docs/RESULTS.md"
 	@echo "diagrams     regenerate the figures in docs/figures"
@@ -52,7 +56,7 @@ seed:
 demo:
 	@echo "backend on http://127.0.0.1:$(BACKEND_PORT)  frontend on http://127.0.0.1:$(FRONTEND_PORT)"
 	@trap 'kill 0' EXIT INT TERM; \
-	 $(PY) -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port $(BACKEND_PORT) & \
+	 $(PY) -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port $(BACKEND_PORT) --reload --reload-dir backend & \
 	 (cd frontend && npm run dev -- --port $(FRONTEND_PORT) --host 127.0.0.1) & \
 	 wait
 
@@ -66,13 +70,34 @@ test:
 	$(PY) -m pytest backend/tests -q
 
 test-fast:
-	$(PY) -m pytest backend/tests -q -m "not slow"
+	$(PY) -m pytest backend/tests -q -m "not slow and not e2e"
+
+# Drives a real browser. Brings up its own backend on 8099 and frontend on
+# 5199 against a copy of the seeded database, so `make demo` keeps working
+# alongside and nothing writes into the database you are about to present.
+e2e:
+	$(PY) -m pytest backend/tests/e2e -q -m e2e
+
+e2e-setup:
+	$(PY) -m pip install pytest-playwright
+	.venv/bin/playwright install chromium
 
 eval-audio:
 	$(PY) scripts/make_eval_set.py
 
+# Six A/B pairs plus a scoring sheet, for the blind listening check. The two
+# sides differ only in the spoken-text normaliser, so the comparison is of
+# the change rather than of two unrelated things.
+listening:
+	$(PY) scripts/listening_check.py
+
 eval:
 	$(PY) -c "from app.eval.harness import run_all; r = run_all(); print('wrote docs/RESULTS.md')"
+
+# Just the end-to-end latency, which is the slow part of `make eval`.
+latency:
+	$(PY) -c "import json; from app.eval import latency; \
+	r = latency.run(); print(latency.render_markdown(r))"
 
 diagrams:
 	$(PY) scripts/diagrams/generate.py

@@ -37,6 +37,21 @@ def decrypt(nonce: bytes, ciphertext: bytes, aad: str | None = None) -> str:
     return pt.decode("utf-8")
 
 
+def encrypt_bytes(plaintext: bytes, aad: str | None = None) -> tuple[bytes, bytes]:
+    """Byte variant of encrypt(), for things that are not text: a voice
+    embedding is a float32 array, and round-tripping it through UTF-8 would
+    corrupt it."""
+    nonce = os.urandom(NONCE_BYTES)
+    ct = AESGCM(_key()).encrypt(nonce, plaintext,
+                                aad.encode("utf-8") if aad else None)
+    return nonce, ct
+
+
+def decrypt_bytes(nonce: bytes, ciphertext: bytes, aad: str | None = None) -> bytes:
+    return AESGCM(_key()).decrypt(bytes(nonce), bytes(ciphertext),
+                                  aad.encode("utf-8") if aad else None)
+
+
 def encrypt_file(path, plaintext: bytes, aad: str | None = None) -> None:
     nonce = os.urandom(NONCE_BYTES)
     ct = AESGCM(_key()).encrypt(nonce, plaintext, aad.encode("utf-8") if aad else None)

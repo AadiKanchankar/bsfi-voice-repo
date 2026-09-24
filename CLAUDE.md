@@ -61,10 +61,16 @@ make check-honesty  # em dash scan
 | Concern | Path |
 | --- | --- |
 | The trace threaded through every stage | `backend/app/trace.py` |
+| Schema, migrations, connections | `backend/app/models.py`, `backend/alembic/`, `backend/app/db.py` |
+| Customers, enrolments, recordings | `backend/app/banking/registry.py`, `backend/app/security/recordings.py` |
 | Every threshold and weight | `backend/app/config.py` |
 | What is real and what is not | `backend/app/capabilities.py` |
 | Turn orchestration | `backend/app/turn.py` |
 | Speech in and out | `backend/app/pipeline/{vad,asr,tts,prosody,speech_text}.py` |
+| Cloud speech providers and fallback | `backend/app/pipeline/providers.py` |
+| Fillers, variation, the honesty answer | `backend/app/pipeline/voice_style.py` |
+| Call state machine, barge-in | `backend/app/call.py` |
+| Compliance lookup and access logging | `backend/app/compliance.py` |
 | Code-switch language ID | `backend/app/pipeline/langid.py` |
 | Intent, slots, retrieval | `backend/app/pipeline/{nlu,slots,retrieval}.py` |
 | Risk, fusion, the gate | `backend/app/pipeline/dialogue.py` |
@@ -88,6 +94,10 @@ make check-honesty  # em dash scan
   actually hit; leave those alone, they are load-bearing.
 - **Deliberate shortcuts get a `ponytail:` comment** naming the ceiling and
   the upgrade path.
+- **A cloud dependency on a free tier does not fail, it waits.** Anything
+  that measures a system containing one decides explicitly whether it is
+  measuring the system or the queue. This has bitten twice: `docs/DECISIONS.md`
+  D30.
 
 ## Before you change anything
 

@@ -20,19 +20,9 @@ pytestmark = pytest.mark.slow
 CUSTOMER = "CUST1000"
 
 
-@pytest.fixture(scope="module")
-def live():
-    """A seeded database plus the real models. Uses the project runtime, since
-    the intent head and the KB index are built by `make seed` and rebuilding
-    them per test would make this suite unusable."""
-    from app.config import DB_PATH, RUNTIME_DIR
-    if not (RUNTIME_DIR / "nlu_head.pkl").exists():
-        pytest.skip("run `make seed` first")
-    conn = db.init_db(DB_PATH)
-    if not conn.execute("SELECT 1 FROM customers LIMIT 1").fetchone():
-        pytest.skip("no seeded customers; run `make seed`")
-    yield conn
-    conn.close()
+# The `live` fixture moved to conftest.py: test_call_state.py needs the same
+# seeded database and a second copy of it would be a second thing to keep
+# right.
 
 
 @pytest.fixture(scope="module")
@@ -245,7 +235,14 @@ def test_beat_7b_ratchet_holds_for_account_access_but_not_public_information(liv
 
 # ---------------------------------------------------------------- beat 8
 
-def test_beat_8_pii_is_tokenised_and_no_raw_audio_on_disk(live):
+def test_beat_8_pii_is_tokenised_and_the_turn_path_writes_no_plaintext_audio(live):
+    """The turn path itself still holds query audio in memory only.
+
+    Recordings are a separate, consent-gated, encrypted store (D21). The two
+    tests that police it are test_persistence.py::test_no_unencrypted_audio_
+    on_disk and ::test_audio_is_not_stored_without_consent. This one covers
+    what it always covered: transcription leaves nothing behind.
+    """
     from app.config import RUNTIME_DIR
     s2 = turn.create_session(live, CUSTOMER, device_id="pytest-device-2")
     t = turn.run_turn(live, s2["session_id"],
@@ -265,7 +262,7 @@ def test_beat_8_pii_is_tokenised_and_no_raw_audio_on_disk(live):
     assert crypto.vault_get(live, s2["session_id"], token).replace(" ", "") == "4539578763621486"
 
     leftovers = list(RUNTIME_DIR.rglob("*.wav")) + list(RUNTIME_DIR.rglob("*.raw"))
-    assert leftovers == [], f"raw audio left on disk: {leftovers}"
+    assert leftovers == [], f"plaintext audio left on disk: {leftovers}"
 
 
 # ---------------------------------------------------------------- beat 9

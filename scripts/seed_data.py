@@ -22,9 +22,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app import db                                                   # noqa: E402
+from app.banking.registry import mask_mobile                         # noqa: E402
 from app.config import (DATA_DIR, ENROLMENT_VOICES, PRESENTER_ID,  # noqa: E402
-                        PRESENTER_NAME, RUNTIME_DIR, SAMPLE_RATE, SEED,
-                        SEED_DIR, SPOOF_VOICE)
+                        PRESENTER_MOBILE, PRESENTER_NAME, RUNTIME_DIR,
+                        SAMPLE_RATE, SEED, SEED_DIR, SPOOF_VOICE)
 from app.pipeline import audio_io                                    # noqa: E402
 from app.security import pii                                         # noqa: E402
 from app.trace import utcnow                                         # noqa: E402
@@ -104,10 +105,15 @@ def seed_banking(conn, rng: random.Random) -> dict:
         cid = f"CUST{1000 + i}"
         name = f"{FIRST[i]} {LAST[i % len(LAST)]}"
         phone = f"9{rng.randrange(100000000, 999999999)}"
+        # Stored masked, the same as every customer created at runtime. The
+        # seed used to write the full number, which meant two paths into one
+        # column with different rules and a mobile lookup that never matched
+        # a seeded customer. The full value stays in this script only, as the
+        # thing a demo caller states out loud.
         conn.execute(
             "INSERT INTO customers (customer_id, name, phone, email, language, enrolled)"
             " VALUES (?,?,?,?,?,?)",
-            (cid, name, phone, f"{FIRST[i].lower()}.demo@example.invalid",
+            (cid, name, mask_mobile(phone), f"{FIRST[i].lower()}.demo@example.invalid",
              rng.choice(["en", "hi", "mr"]), 1 if i < 3 else 0))
 
         acct_id = f"ACC{2000 + i}"
@@ -207,7 +213,8 @@ def seed_presenter(conn, rng: random.Random) -> dict:
     conn.execute(
         "INSERT INTO customers (customer_id, name, phone, email, language, enrolled)"
         " VALUES (?,?,?,?,?,?)",
-        (cid, PRESENTER_NAME, "9820000001", "presenter@example.invalid", "mr", 0))
+        (cid, PRESENTER_NAME, mask_mobile(PRESENTER_MOBILE),
+         "presenter@example.invalid", "mr", 0))
     conn.execute(
         "INSERT INTO accounts (account_id, customer_id, account_number, account_type,"
         " balance, ifsc, branch) VALUES (?,?,?,?,?,?,?)",

@@ -1,224 +1,102 @@
-"""SQLite access, stdlib sqlite3 only.
+"""Database access.
 
-Why no ORM: the whole point of beat 10 is that a presenter edits a stored row
-with raw SQL and the chain catches it. An ORM between us and the bytes would
-add a layer to explain and nothing to the demo. See docs/STACK_MAPPING.md.
+Two doors onto one SQLite file, deliberately:
+
+- `connect()` returns a plain `sqlite3.Connection`. Most of the pipeline uses
+  it, and demo beat 10 depends on it: a presenter edits a stored row with raw
+  SQL and the hash chain catches it. An ORM in the middle of that would be a
+  layer to explain with nothing to show.
+- `engine()` and `session()` are SQLModel, used by the newer tables (calls,
+  recordings, cases, access log) where relationships and typed rows earn
+  their keep.
+
+The SCHEMA is no longer written here. `app/models.py` declares it and Alembic
+migrates it, so the shape of the database is versioned and a PostgreSQL swap
+is a URL change. `init_db()` runs any pending migration on startup, which
+means a developer who pulls a schema change does not have to remember to.
+See DECISIONS.md D20.
 """
 from __future__ import annotations
 
 import sqlite3
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-from .config import DB_PATH, RUNTIME_DIR, VAULT_DIR
+from .config import DB_PATH, RUNTIME_DIR, VAULT_DIR, db_url
 
-SCHEMA = """
-PRAGMA journal_mode=WAL;
--- synchronous=NORMAL is the documented safe pairing with WAL: commits stop
--- fsyncing, which on this hardware is the difference between 0.4 s and 0.02 ms
--- per ledger append. A power loss can lose the last few commits but cannot
--- corrupt the chain, and the demo appends thousands of records.
-PRAGMA synchronous=NORMAL;
+# Pragmas applied to every raw connection. synchronous=NORMAL is the
+# documented safe pairing with WAL: commits stop fsyncing, which on this
+# hardware is the difference between 0.4 s and 0.02 ms per ledger append. A
+# power loss can lose the last few commits but cannot corrupt the chain.
+PRAGMAS = ("PRAGMA journal_mode=WAL",
+           "PRAGMA synchronous=NORMAL",
+           "PRAGMA foreign_keys=ON",
+           "PRAGMA busy_timeout=5000")
 
--- ---------------------------------------------------------------- ledger
-CREATE TABLE IF NOT EXISTS ledger (
-  idx         INTEGER PRIMARY KEY,      -- 0-based position in the chain
-  record_id   TEXT NOT NULL UNIQUE,
-  kind        TEXT NOT NULL,            -- consent | turn | purge | handover | admin
-  session_id  TEXT,
-  payload     TEXT NOT NULL,            -- canonical JSON of the record body
-  ts          TEXT NOT NULL,            -- ISO-8601 UTC, part of the hash preimage
-  prev_hash   TEXT NOT NULL,
-  hash        TEXT NOT NULL,
-  sig         TEXT NOT NULL             -- HMAC-SHA256(key, hash)
-);
+_migrated: set[str] = set()
+_migrate_lock = threading.Lock()
 
-CREATE TABLE IF NOT EXISTS ledger_checkpoint (
-  idx   INTEGER PRIMARY KEY,            -- index of the last record in the segment
-  hash  TEXT NOT NULL
-);
 
--- ---------------------------------------------------------------- sessions
-CREATE TABLE IF NOT EXISTS sessions (
-  session_id   TEXT PRIMARY KEY,
-  customer_id  TEXT,
-  consent_ref  TEXT,
-  created_at   TEXT NOT NULL,
-  device_id    TEXT,
-  voice_clip   TEXT,                          -- seeded clip used for text-mode verification
-  tier_floor   INTEGER NOT NULL DEFAULT 0,   -- the session tier ratchet
-  clean_turns  INTEGER NOT NULL DEFAULT 0,   -- consecutive turns raising no escalation
-  verified_at    TEXT,                       -- last successful live voice check
-  verified_score REAL,
-  verified_spoof REAL,
-  verified_source TEXT,
-  verified_turns INTEGER NOT NULL DEFAULT 0, -- turns spent against that check
-  turn_count   INTEGER NOT NULL DEFAULT 0,
-  withdrawn_at TEXT
-);
+def _alembic_config(url: str):
+    from alembic.config import Config
+    backend = Path(__file__).resolve().parents[1]
+    cfg = Config(str(backend / "alembic.ini"))
+    cfg.set_main_option("script_location", str(backend / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", url)
+    return cfg
 
-CREATE TABLE IF NOT EXISTS consents (
-  consent_ref    TEXT PRIMARY KEY,
-  session_id     TEXT NOT NULL,
-  purpose        TEXT NOT NULL,
-  retention_days INTEGER NOT NULL,
-  granted_at     TEXT NOT NULL,
-  withdrawn_at   TEXT,
-  languages      TEXT
-);
 
-CREATE TABLE IF NOT EXISTS traces (
-  trace_id    TEXT PRIMARY KEY,
-  session_id  TEXT NOT NULL,
-  turn_index  INTEGER NOT NULL,
-  created_at  TEXT NOT NULL,
-  body        TEXT NOT NULL            -- redacted ComplianceTrace JSON
-);
+def migrate(url: str | None = None) -> None:
+    """Bring the database up to head. Idempotent, and run once per URL per
+    process so a test suite that opens fifty databases is not fifty upgrades
+    of the same one."""
+    import logging
+    from alembic import command
+    target = url or db_url()
+    with _migrate_lock:
+        if target in _migrated:
+            return
+        # Alembic logs three INFO lines per upgrade. On a test suite that
+        # creates a database per test that is noise, not information.
+        # alembic.runtime.migration is the logger that actually emits the
+        # three INFO lines, and alembic.ini's fileConfig sets its level, so
+        # quieting the parent is not enough.
+        noisy = [logging.getLogger(n) for n in
+                 ("alembic", "alembic.runtime.migration", "alembic.env")]
+        levels = [lg.level for lg in noisy]
+        for lg in noisy:
+            lg.setLevel(logging.WARNING)
+        try:
+            command.upgrade(_alembic_config(target), "head")
+        finally:
+            for lg, lv in zip(noisy, levels):
+                lg.setLevel(lv)
+        _migrated.add(target)
 
--- PII vault: one row per token, ciphertext only. Held apart from `traces`
--- so that reading the transcript store never yields an identifier.
-CREATE TABLE IF NOT EXISTS vault (
-  session_id TEXT NOT NULL,
-  token      TEXT NOT NULL,
-  pii_type   TEXT NOT NULL,
-  nonce      BLOB NOT NULL,
-  ciphertext BLOB NOT NULL,
-  PRIMARY KEY (session_id, token)
-);
-
--- ---------------------------------------------------------------- mock core banking
-CREATE TABLE IF NOT EXISTS customers (
-  customer_id TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  phone       TEXT,
-  email       TEXT,
-  language    TEXT,
-  enrolled    INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS accounts (
-  account_id     TEXT PRIMARY KEY,
-  customer_id    TEXT NOT NULL,
-  account_number TEXT NOT NULL,
-  account_type   TEXT NOT NULL,
-  balance        REAL NOT NULL,
-  ifsc           TEXT,
-  branch         TEXT
-);
-
-CREATE TABLE IF NOT EXISTS cards (
-  card_id     TEXT PRIMARY KEY,
-  customer_id TEXT NOT NULL,
-  card_number TEXT NOT NULL,           -- Luhn-valid synthetic
-  card_type   TEXT NOT NULL,
-  status      TEXT NOT NULL DEFAULT 'active',
-  daily_limit REAL NOT NULL DEFAULT 50000
-);
-
-CREATE TABLE IF NOT EXISTS transactions (
-  txn_id      TEXT PRIMARY KEY,
-  account_id  TEXT NOT NULL,
-  ts          TEXT NOT NULL,
-  amount      REAL NOT NULL,
-  direction   TEXT NOT NULL,           -- debit | credit
-  description TEXT NOT NULL,
-  channel     TEXT
-);
-
-CREATE TABLE IF NOT EXISTS payees (
-  payee_id    TEXT PRIMARY KEY,
-  customer_id TEXT NOT NULL,
-  name        TEXT NOT NULL,
-  account_number TEXT NOT NULL,
-  ifsc        TEXT,
-  added_at    TEXT
-);
-
-CREATE TABLE IF NOT EXISTS cheques (
-  cheque_number TEXT PRIMARY KEY,
-  account_id    TEXT NOT NULL,
-  amount        REAL NOT NULL,
-  status        TEXT NOT NULL,
-  presented_on  TEXT
-);
-
-CREATE TABLE IF NOT EXISTS branches (
-  ifsc   TEXT PRIMARY KEY,
-  name   TEXT NOT NULL,
-  city   TEXT NOT NULL,
-  address TEXT
-);
-
--- Investment holdings. Synthetic, like everything else. Present so the
--- assistant can answer factual questions about a portfolio without ever
--- recommending anything; see POL-INV-016 and config.HARD_TIER3_INTENTS.
-CREATE TABLE IF NOT EXISTS holdings (
-  holding_id   TEXT PRIMARY KEY,
-  customer_id  TEXT NOT NULL,
-  kind         TEXT NOT NULL,          -- equity | mutual_fund | sgb | fd
-  name         TEXT NOT NULL,
-  units        REAL NOT NULL,
-  avg_cost     REAL NOT NULL,
-  last_price   REAL NOT NULL,
-  as_of        TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS sips (
-  sip_id       TEXT PRIMARY KEY,
-  customer_id  TEXT NOT NULL,
-  fund         TEXT NOT NULL,
-  amount       REAL NOT NULL,
-  day_of_month INTEGER NOT NULL,
-  started_on   TEXT NOT NULL,
-  status       TEXT NOT NULL DEFAULT 'active'
-);
-
-CREATE INDEX IF NOT EXISTS ix_holdings_customer ON holdings(customer_id);
-
--- ---------------------------------------------------------------- speaker enrolment
-CREATE TABLE IF NOT EXISTS speakers (
-  customer_id TEXT PRIMARY KEY,
-  embedding   BLOB NOT NULL,           -- float32 ECAPA mean embedding, L2-normalised
-  n_clips     INTEGER NOT NULL,
-  source      TEXT NOT NULL,           -- 'synthetic' | 'live'
-  enrolled_at TEXT NOT NULL
-);
-
--- ---------------------------------------------------------------- escalation queue
-CREATE TABLE IF NOT EXISTS handovers (
-  handover_id TEXT PRIMARY KEY,
-  trace_id    TEXT NOT NULL,
-  session_id  TEXT NOT NULL,
-  created_at  TEXT NOT NULL,
-  reason      TEXT NOT NULL,
-  packet      TEXT NOT NULL,
-  claimed_by  TEXT,
-  status      TEXT NOT NULL DEFAULT 'queued'
-);
-
-CREATE INDEX IF NOT EXISTS ix_traces_session ON traces(session_id);
-CREATE INDEX IF NOT EXISTS ix_txn_account ON transactions(account_id, ts DESC);
-CREATE INDEX IF NOT EXISTS ix_ledger_session ON ledger(session_id);
-"""
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
+    """A raw connection with the pragmas applied."""
     p = Path(path or DB_PATH)
     p.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(p, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA synchronous=NORMAL")
+    for pragma in PRAGMAS:
+        conn.execute(pragma)
     return conn
 
 
 def init_db(path: Path | None = None) -> sqlite3.Connection:
+    """Migrate to head, then hand back a raw connection.
+
+    Tests pass an explicit path and get their own migrated database.
+    """
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     VAULT_DIR.mkdir(parents=True, exist_ok=True)
-    conn = connect(path)
-    conn.executescript(SCHEMA)
-    conn.commit()
-    return conn
+    target = f"sqlite:///{Path(path).resolve()}" if path else db_url()
+    migrate(target)
+    return connect(path)
 
 
 @contextmanager
@@ -229,3 +107,42 @@ def tx(conn: sqlite3.Connection):
     except Exception:
         conn.rollback()
         raise
+
+
+# ---------------------------------------------------------------- SQLModel
+
+_engines: dict[str, object] = {}
+
+
+def engine(url: str | None = None):
+    """A SQLModel engine, one per URL, migrated on first use."""
+    from sqlalchemy import event
+    from sqlmodel import create_engine
+    target = url or db_url()
+    if target not in _engines:
+        migrate(target)
+        eng = create_engine(target, echo=False,
+                            connect_args={"check_same_thread": False}
+                            if target.startswith("sqlite") else {})
+        if target.startswith("sqlite"):
+            @event.listens_for(eng, "connect")
+            def _pragmas(dbapi_conn, _record):      # noqa: ANN001
+                cur = dbapi_conn.cursor()
+                for pragma in PRAGMAS:
+                    cur.execute(pragma)
+                cur.close()
+        _engines[target] = eng
+    return _engines[target]
+
+
+@contextmanager
+def session(url: str | None = None):
+    """A SQLModel session that commits on success and rolls back on error."""
+    from sqlmodel import Session
+    with Session(engine(url)) as s:
+        try:
+            yield s
+            s.commit()
+        except Exception:
+            s.rollback()
+            raise

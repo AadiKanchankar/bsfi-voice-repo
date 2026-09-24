@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 from typing import Iterable
 
-from ..config import (AMOUNT_MAX, FUSION_ALPHA, FUSION_BETA, FUSION_GAMMA,
+from ..config import (MAX_CLARIFICATIONS,AMOUNT_MAX, FUSION_ALPHA, FUSION_BETA, FUSION_GAMMA,
                       GROUNDED_INTENTS, HARD_TIER3_INTENTS, HISTORY_LAMBDA,
                       RETRIEVAL_INTENTS,
                       INTENT_SENSITIVITY, MIN_TIER_BY_INTENT, PUBLIC_INTENTS,
@@ -54,10 +54,21 @@ def sens(intent: str | None) -> float:
 
 def norm_amount(amount: float | None) -> float:
     """min(1, log1p(a) / log1p(A_max)). Log scale because the step from 1,000
-    to 10,000 rupees matters more than the step from 190,000 to 200,000."""
-    if not amount or amount <= 0:
+    to 10,000 rupees matters more than the step from 190,000 to 200,000.
+
+    Defensive about type on purpose. The CLU layer coerces amounts at its own
+    boundary, but this is the money path and it is reached from several
+    callers: a non-numeric amount here must degrade to "no amount known",
+    never raise. It used to raise TypeError and take the whole turn down mid
+    call.
+    """
+    try:
+        value = float(amount)       # accepts int, float, numeric string
+    except (TypeError, ValueError):
         return 0.0
-    return min(1.0, math.log1p(amount) / math.log1p(AMOUNT_MAX))
+    if value <= 0:
+        return 0.0
+    return min(1.0, math.log1p(value) / math.log1p(AMOUNT_MAX))
 
 
 def dev_history(anomalies: Iterable[str] | int) -> float:
@@ -195,7 +206,8 @@ def ceiling_for(tier: int) -> float:
 
 def gate(*, tier: int, R: float, c_final: float, needs_grounding: bool,
          grounded: bool, verification_passed: bool | None,
-         otp_passed: bool | None, readback_confirmed: bool | None) -> dict:
+         otp_passed: bool | None, readback_confirmed: bool | None,
+         clarifications: int = 0, agent_requested: bool = False) -> dict:
     """Automate only when every condition holds. Otherwise refuse or escalate.
 
     The order of the checks is the order of the explanation the dashboard
@@ -237,6 +249,32 @@ def gate(*, tier: int, R: float, c_final: float, needs_grounding: bool,
     outcome = "refused" if first["check"] == "grounding" else "escalated"
     if first["check"] == "confidence" and tier == 0:
         outcome = "refused"
+
+    # R6. Not being sure what someone asked is not a reason to fetch a human.
+    # It is a reason to ask them. Only the confidence check qualifies: a risk
+    # ceiling breach, a failed verification, a missing OTP and tier 3 are all
+    # decisions about whether this may be automated at all, and no amount of
+    # asking changes them.
+    #
+    # Three things stop it. Tier 3 never reaches here. An explicit request
+    # for a person is honoured immediately, because ignoring that to ask a
+    # clarifying question is the most irritating thing a helpline can do.
+    # And after MAX_CLARIFICATIONS tries the caller has told us twice and we
+    # are not getting there, so the escalation is the honest outcome.
+    if (outcome == "escalated" and first["check"] == "confidence"
+            and tier < 3 and not agent_requested
+            and clarifications < MAX_CLARIFICATIONS):
+        return {"automate": False, "outcome": "clarify", "checks": checks,
+                "tau": tau, "ceiling": ceiling,
+                "clarifications": clarifications + 1,
+                # The reason names the failing check, like every other
+                # branch here. An existing test pins that, and it is right
+                # to: the dashboard's explanation is this string, and
+                # "asking rather than transferring" without saying what was
+                # unclear explains nothing.
+                "reason": (f"confidence failed: c_final = {c_final:.4f} is below "
+                           f"tau = {tau:.2f}, asking rather than transferring "
+                           f"(attempt {clarifications + 1} of {MAX_CLARIFICATIONS})")}
     return {"automate": False, "outcome": outcome, "checks": checks,
             "tau": tau, "ceiling": ceiling,
             "reason": f"{first['check']} failed: {first['detail']}"}

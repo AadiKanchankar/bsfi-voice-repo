@@ -58,8 +58,12 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 input, select, textarea {
   font: inherit; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; width: 100%;
 }
-.row { display: flex; gap: 8px; align-items: center; }
-.row > input { flex: 1; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* Both, and min-width:0, or the select keeps its width:100% basis from the
+   rule above, claims the whole row, and every input beside it collapses to
+   nothing. That is what made the registration form render as two empty
+   slivers next to a full width language dropdown. */
+.row > input, .row > select { flex: 1 1 8rem; min-width: 0; }
 
 .tag {
   display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 12px;

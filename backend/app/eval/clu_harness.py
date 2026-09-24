@@ -195,6 +195,17 @@ def run_all(write: bool = True, pace_s: float | None = None) -> dict:
     # Default pacing keeps a free tier inside its tokens-per-minute budget.
     if pace_s is None:
         pace_s = float(os.environ.get("BFSI_CLU_EVAL_PACE", "4.5"))
+    # A live turn gives the CLU three seconds and then goes on without it,
+    # because a caller is waiting. Here nobody is waiting, and cutting a
+    # rate-limited call short would measure the free tier rather than the
+    # model, which is exactly the mistake that made the first CLU evaluation
+    # meaningless. So the deadline is lifted for the duration of the run.
+    os.environ.setdefault("BFSI_CLU_DEADLINE", "120")
+    import importlib
+    from .. import config as cfg
+    cfg.CLU_DEADLINE_S = float(os.environ["BFSI_CLU_DEADLINE"])
+    from ..clu import providers as _providers
+    importlib.reload(_providers)
     clu_rows = run_with_clu(cases, pace_s=pace_s)
     out = {
         "generated_at": utcnow().isoformat(),

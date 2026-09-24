@@ -22,9 +22,35 @@ class Capability(BaseModel):
     status: CapabilityStatus
     implementation: str
     note: str | None = None
+    # True when using this component sends data off the machine. The note
+    # must then say exactly what leaves, because "cloud" is not a disclosure.
+    external: bool = False
 
 
 CAPABILITIES: dict[str, Capability] = {
+    "tts_sarvam": Capability(
+        status="SIMULATED", external=True,
+        implementation="Sarvam Bulbul, selected per language when a key is set",
+        note="SIMULATED, and that word is load bearing: the request shape is "
+             "written from Sarvam's published API but has never run against the "
+             "service, because there is no key in this repository. It reports "
+             "itself unavailable and every call falls back to the local stack. "
+             "When a key is set, the text to be spoken leaves this machine."),
+    "stt_sarvam": Capability(
+        status="SIMULATED", external=True,
+        implementation="Sarvam Saarika, selected per language when a key is set",
+        note="SIMULATED for the same reason as tts_sarvam. When a key is set, "
+             "the caller's recorded audio leaves this machine, which is a "
+             "stronger disclosure than the text direction and is why the two "
+             "are listed separately."),
+    "tts_elevenlabs": Capability(
+        status="REAL", external=True,
+        implementation="ElevenLabs Flash v2.5, English, when a key is set",
+        note="The vendor quotes about 75 ms; that is model inference only and "
+             "is not quoted anywhere in this project. RESULTS.md carries the "
+             "end to end measurement taken from here. The text to be spoken "
+             "leaves this machine."),
+
     "asr": Capability(
         status="REAL", implementation="faster-whisper base int8",
         note="not fine-tuned on banking audio; the measured entity error rate is the "

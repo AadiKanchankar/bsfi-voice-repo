@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import Literal
 
+import re
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..config import INTENTS
@@ -62,6 +64,45 @@ class CLUResult(BaseModel):
     @classmethod
     def _bounded(cls, v: float) -> float:
         return max(0.0, min(1.0, float(v)))
+
+    @field_validator("entities")
+    @classmethod
+    def _numeric_amount(cls, v: dict) -> dict:
+        """An amount must be a number by the time it leaves this layer.
+
+        The model is free to answer `"amount": "5,000"` or `"5000 rupees"`,
+        and it does. That string used to travel intact into
+        `dialogue.norm_amount`, which compares it against zero and raises
+        TypeError, killing the turn with a 500 in the middle of a call.
+
+        Model output is untrusted input and this is the boundary, so the
+        coercion belongs here. An amount that cannot be read as a number is
+        dropped rather than guessed at: a wrong amount in a transfer is worse
+        than a missing one, because a missing one makes the assistant ask.
+        """
+        out = dict(v or {})
+        if "amount" not in out:
+            return out
+        raw = out["amount"]
+        if isinstance(raw, (int, float)):
+            value = float(raw)
+        else:
+            # Keep a leading minus. Stripping it turned "-5" into 5, which is
+            # worse than the crash it was meant to prevent: a sign flip on a
+            # transfer amount is a wrong instruction, not a missing one.
+            text = str(raw).strip()
+            sign = -1.0 if text.startswith("-") else 1.0
+            digits = re.sub(r"[^0-9.]", "", text)
+            try:
+                value = sign * float(digits)
+            except ValueError:
+                out.pop("amount")
+                return out
+        if value <= 0:
+            out.pop("amount")
+        else:
+            out["amount"] = value
+        return out
 
     @field_validator("languages")
     @classmethod

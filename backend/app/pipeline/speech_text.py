@@ -151,6 +151,42 @@ def speech_amount(value: float, lang: str = "en", currency: bool = True) -> str:
     return out
 
 
+# ---------------------------------------------------------------- spelling
+
+# Letter names, so an IFSC code survives the phonemiser. In Hindi and Marathi
+# the code is still Latin on the screen, but it has to be spoken in Devanagari
+# or the phonemiser reads it with English vowels and it comes out as noise.
+# These are the names an Indian speaker uses for the Latin alphabet.
+_LETTER_NAMES = {
+    "hi": {"A": "ए", "B": "बी", "C": "सी", "D": "डी", "E": "ई", "F": "एफ",
+           "G": "जी", "H": "एच", "I": "आई", "J": "जे", "K": "के", "L": "एल",
+           "M": "एम", "N": "एन", "O": "ओ", "P": "पी", "Q": "क्यू", "R": "आर",
+           "S": "एस", "T": "टी", "U": "यू", "V": "वी", "W": "डब्ल्यू",
+           "X": "एक्स", "Y": "वाय", "Z": "ज़ेड"},
+}
+_LETTER_NAMES["mr"] = dict(_LETTER_NAMES["hi"])
+
+
+def spell_code(code: str, lang: str = "en") -> str:
+    """A reference code, letter by letter and digit by digit.
+
+    IFSC codes, cheque numbers and transaction references are read out one
+    character at a time by every bank helpline, because hearing "DEMO zero
+    zero zero one two three four" is the only way a caller can write it down.
+    A synthesiser left to itself pronounces DEMO0001234 as a word.
+    """
+    lang = lang if lang in ("en", "hi", "mr") else "en"
+    names = _LETTER_NAMES.get(lang)
+    out = []
+    for ch in (code or "").upper():
+        if ch.isdigit():
+            out.append(speech_digits(ch, lang))
+        elif ch.isalpha():
+            out.append(names[ch] if names and ch in names else ch)
+        # Anything else (hyphens, slashes) is a separator, not a sound.
+    return " ".join(out)
+
+
 # ---------------------------------------------------------------- polish
 
 _ABBREV = {
@@ -160,15 +196,84 @@ _ABBREV = {
 }
 
 
+# An IFSC code is four letters, then a zero, then six more characters. Matched
+# before anything else touches digits, or the trailing six get read as a number.
+_IFSC = re.compile(r"\b([A-Z]{4}0[A-Z0-9]{6})\b")
+# A masked card or account: any run of X or * followed by the digits kept.
+_MASKED = re.compile(r"\b[X*x]{2,}(\d{2,6})\b")
+# "ending in 4321", "ending 4321", and the Hindi and Marathi equivalents.
+_ENDING = re.compile(r"(ending(?:\s+in)?|अंत में|शेवटी)\s+(\d{3,6})\b", re.IGNORECASE)
+# A rupee amount written with digits, with or without Indian digit grouping.
+_RUPEES = re.compile(
+    r"(?:(?:Rs\.?|INR|₹)\s*)(\d[\d,]*(?:\.\d{1,2})?)"
+    r"|(\d[\d,]*(?:\.\d{1,2})?)\s*(?:rupees?|रुपये|रुपया)",
+    re.IGNORECASE)
+# A one time password, always spoken digit by digit with pauses between.
+#
+# No `\b` around the Devanagari alternative, and that is not an oversight.
+# `ओटीपी` ends in a combining vowel sign, which Python's `\w` does not count
+# as a word character, so `\b` finds no boundary there and the pattern never
+# matches. It worked in English and silently did nothing in Hindi, which is
+# the worst shape a bug can take in a multilingual system.
+_OTP = re.compile(r"(?:\bOTP\b|\bone time password\b|ओटीपी)"
+                  r"[^0-9]{0,24}(\d{4,8})\b", re.IGNORECASE)
+
+
+def _group_digits(digits: str, lang: str, size: int = 2) -> str:
+    """Digits in small groups, which is how a person reads a number aloud.
+
+    "four three, two one" is easier to write down than eight digits in one
+    breath. The comma is a pause instruction to the synthesiser, not
+    punctuation anyone hears.
+    """
+    chunks = [digits[i:i + size] for i in range(0, len(digits), size)]
+    return ", ".join(speech_digits(c, lang) for c in chunks)
+
+
+def normalise_for_speech(text: str, lang: str = "en") -> str:
+    """Rewrite the things a synthesiser gets wrong, before it sees them.
+
+    Most "wrong pronunciation" in banking is numbers and codes, not the voice
+    model: 150000 read as a cardinal number in the western grouping, an IFSC
+    pronounced as a word, a card's last four run together into one number.
+    Each of those is fixed here, in the caller's language, and the stored
+    transcript keeps the original.
+
+    Order matters. Codes are matched before amounts, because an IFSC ends in
+    six characters that often look like a number, and masked digits before
+    bare digits for the same reason.
+    """
+    lang = lang if lang in ("en", "hi", "mr") else "en"
+    out = text or ""
+
+    out = _IFSC.sub(lambda m: spell_code(m.group(1), lang), out)
+    out = _OTP.sub(
+        lambda m: m.group(0)[:m.start(1) - m.start(0)] + _group_digits(m.group(1), lang, 1),
+        out)
+    out = _MASKED.sub(lambda m: _group_digits(m.group(1), lang), out)
+    out = _ENDING.sub(
+        lambda m: f"{m.group(1)} {_group_digits(m.group(2), lang)}", out)
+
+    def _money(m: re.Match) -> str:
+        raw = (m.group(1) or m.group(2) or "").replace(",", "")
+        try:
+            return speech_amount(float(raw), lang)
+        except ValueError:
+            return m.group(0)
+    out = _RUPEES.sub(_money, out)
+    return out
+
+
 def speak_friendly(text: str, lang: str = "en") -> str:
     """Last pass before synthesis.
 
-    Spells out acronyms a synthesiser would otherwise mangle, turns bare
-    percentages into words, and drops the double spaces that make Piper pause
-    in odd places. Applied to the spoken string only; the stored transcript and
-    the dashboard keep the original.
+    Normalises amounts, codes and masked digits, spells out acronyms a
+    synthesiser would otherwise mangle, turns bare percentages into words, and
+    drops the double spaces that make Piper pause in odd places. Applied to
+    the spoken string only; the stored transcript and the dashboard keep the
+    original.
     """
-    out = text or ""
+    out = normalise_for_speech(text or "", lang)
     for abbr, spoken in _ABBREV.get("en", {}).items():
         out = re.sub(rf"\b{abbr}\b", spoken, out)
     # "8.40 percent" reads better than "8.40percent"; espeak handles decimals.

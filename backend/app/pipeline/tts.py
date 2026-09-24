@@ -40,6 +40,8 @@ import os
 import re
 import wave
 
+from collections import OrderedDict
+
 import numpy as np
 
 from ..config import (ELEVENLABS_KEY_ENV, ELEVENLABS_MODEL, ELEVENLABS_VOICES,
@@ -234,10 +236,65 @@ def _speak_elevenlabs(text: str, lang: str) -> dict | None:
 
 # ---------------------------------------------------------------- entry point
 
-def synthesize(text: str, language: str | None = None) -> dict:
-    """Speak a reply. Never returns silently: a failed engine falls through."""
+# R4. Synthesis is 71% of the time between a caller finishing and hearing a
+# reply (5.0 s of a 7.1 s p50, measured, see RESULTS.md). Two of the cheapest
+# wins live here: never synthesise the same fixed line twice, and let a caller
+# start a reply after its first phrase rather than after all four.
+#
+# The cache is keyed by engine, voice, language and the exact text, because
+# all four change the audio. It is bounded: a caller's replies are mostly
+# unique and an unbounded cache of them would be both a leak and a pile of
+# spoken account balances sitting in memory.
+_CACHE: "OrderedDict[tuple, dict]" = OrderedDict()
+CACHE_MAX = 64
+
+# Lines that never vary. Pre-synthesised at startup, so the greeting and the
+# recording notice cost nothing at the moment a caller is waiting on them.
+FIXED_PROMPTS_CACHED = 0
+
+
+def _cache_key(text: str, lang: str) -> tuple:
+    return (engine(), voice_for(lang), lang, text)
+
+
+def cache_stats() -> dict:
+    return {"entries": len(_CACHE), "max": CACHE_MAX,
+            "fixed_prompts": FIXED_PROMPTS_CACHED}
+
+
+def prewarm(prompts: "list[tuple[str, str]]") -> int:
+    """Synthesise fixed lines once, at startup, off the caller's clock."""
+    global FIXED_PROMPTS_CACHED
+    done = 0
+    for text, lang in prompts:
+        if not text:
+            continue
+        try:
+            synthesize(text, lang, cacheable=True)
+            done += 1
+        except Exception:                       # noqa: BLE001
+            # A prompt that will not synthesise is not worth failing startup
+            # over; it simply costs its normal time when it is first spoken.
+            continue
+    FIXED_PROMPTS_CACHED = done
+    return done
+
+
+def synthesize(text: str, language: str | None = None, *,
+               cacheable: bool = False) -> dict:
+    """Speak a reply. Never returns silently: a failed engine falls through.
+
+    `cacheable` is opt in, and false by default, because most replies contain
+    a balance or a payee and caching those would keep spoken personal data in
+    memory after the call. Only fixed lines set it.
+    """
     lang = _lang(language)
     assert_devanagari(text, lang)
+    if cacheable:
+        hit = _CACHE.get(_cache_key(text, lang))
+        if hit is not None:
+            _CACHE.move_to_end(_cache_key(text, lang))
+            return {**hit, "cached": True}
     spoken = speak_friendly(text, lang)
     wanted = engine()
 
@@ -252,7 +309,11 @@ def synthesize(text: str, language: str | None = None) -> dict:
         if out is not None:
             if name != wanted:
                 out["note"] = f"{wanted} was unavailable, spoke with {name}"
-            return out
+            if cacheable:
+                _CACHE[_cache_key(text, lang)] = out
+                while len(_CACHE) > CACHE_MAX:
+                    _CACHE.popitem(last=False)
+            return {**out, "cached": False}
     return {"audio": b"", "voice": "none", "language": lang, "available": False,
             "engine": "none", "leaves_machine": False,
             "error": "no speech engine available", "model_id": "none"}

@@ -28,13 +28,36 @@ from .config import (GROUNDED_INTENTS, OTP_DEMO_CODE, TIER_REQUIRING_OTP,
                      TIER_REQUIRING_VERIFICATION, VERIFICATION_MAX_TURNS,
                      VERIFICATION_TTL_SECONDS)
 from . import clu
-from .pipeline import dialogue, langid, nlu, retrieval
+from .pipeline import dialogue, langid, nlu, retrieval, voice_style
 from .security import crypto, ledger, pii
 from .trace import AuthOutcome, ComplianceTrace, utcnow
 
 # Per-session working state that is not worth a table: the pending tier 2
 # action awaiting OTP and read-back, and the last verification outcome.
 SESSION_STATE: dict[str, dict] = {}
+
+
+def drop_pending_for_call(conn: sqlite3.Connection, call_id: str) -> list[str]:
+    """Cancel any half-finished confirmation on this call, and say which.
+
+    Called when the caller interrupts. A tier 2 transaction is only allowed
+    to execute after the caller has heard the amount and the payee read back
+    and said yes. If they cut the read-back off, they did not hear it, so the
+    confirmation they might give next would be consent to something they were
+    never told. The change request states the rule directly: an interrupted
+    read-back counts as not confirmed, no action, ask again.
+
+    Leaving the pending transaction alive would mean a bare "yes" a moment
+    later executes a transfer whose amount the caller never heard.
+    """
+    dropped = []
+    rows = conn.execute("SELECT session_id FROM sessions WHERE call_id=?", (call_id,))
+    for row in rows:
+        st = SESSION_STATE.get(row["session_id"])
+        if st and st.get("pending"):
+            dropped.append(st["pending"].get("stage", "unknown"))
+            st["pending"] = None
+    return dropped
 
 
 def state(session_id: str) -> dict:
@@ -48,30 +71,131 @@ def state(session_id: str) -> dict:
 
 def create_session(conn: sqlite3.Connection, customer_id: str | None,
                    device_id: str | None = None, voice_clip: str | None = None,
-                   languages: str = "en,hi,mr") -> dict:
-    """Open a session and record consent as the first ledger entry of the call."""
+                   languages: str = "en,hi,mr", recording_consent: bool = False,
+                   channel: str = "text") -> dict:
+    """Open a call and record consent as its first ledger entry.
+
+    A session now belongs to a `calls` row. That linkage is what R2's
+    dashboard lookup needs: before it existed, a session referred to a
+    customer by a string that matched nothing durable, so searching by
+    customer found nothing.
+
+    `recording_consent` defaults to False and recording additionally waits on
+    `notice_completed`, so audio is never stored by omission.
+    """
     from .config import CONSENT_PURPOSE, CONSENT_RETENTION_DAYS
     session_id, consent_ref = str(uuid.uuid4()), str(uuid.uuid4())
+    call_id = f"CALL{uuid.uuid4().hex[:12].upper()}"
     now = utcnow().isoformat()
     conn.execute(
-        "INSERT INTO sessions (session_id, customer_id, consent_ref, created_at,"
-        " device_id, voice_clip) VALUES (?,?,?,?,?,?)",
-        (session_id, customer_id, consent_ref, now, device_id, voice_clip))
+        "INSERT INTO calls (call_id, customer_id, consent_ref, started_at,"
+        " channel, recording_consent, notice_completed) VALUES (?,?,?,?,?,?,?)",
+        (call_id, customer_id, consent_ref, now, channel, int(recording_consent), 0))
+    conn.execute(
+        "INSERT INTO sessions (session_id, call_id, customer_id, consent_ref,"
+        " created_at, device_id, voice_clip) VALUES (?,?,?,?,?,?,?)",
+        (session_id, call_id, customer_id, consent_ref, now, device_id, voice_clip))
     conn.execute(
         "INSERT INTO consents (consent_ref, session_id, purpose, retention_days,"
-        " granted_at, languages) VALUES (?,?,?,?,?,?)",
-        (consent_ref, session_id, CONSENT_PURPOSE, CONSENT_RETENTION_DAYS, now, languages))
+        " granted_at, languages, recording) VALUES (?,?,?,?,?,?,?)",
+        (consent_ref, session_id, CONSENT_PURPOSE, CONSENT_RETENTION_DAYS, now,
+         languages, int(recording_consent)))
     conn.commit()
     record = ledger.append(conn, "consent", {
-        "session_id": session_id, "consent_ref": consent_ref,
+        "session_id": session_id, "call_id": call_id, "consent_ref": consent_ref,
         "purpose": CONSENT_PURPOSE, "retention_days": CONSENT_RETENTION_DAYS,
         "languages": languages, "granted_at": now,
         "customer_ref": customer_id, "notice_spoken": True,
+        "recording_consent": bool(recording_consent),
     }, session_id=session_id)
-    return {"session_id": session_id, "consent_ref": consent_ref,
+    # The consent notice is the greeting, so the call is in GREETING the
+    # moment it opens. Leaving it in CONNECTING meant nothing ever moved it
+    # until the first turn, and a caller pressing Stop during the notice was
+    # interrupting a state the server did not believe it was in.
+    from . import call as callsm
+    callsm.transition(conn, call_id, callsm.GREETING, reason="consent notice")
+    return {"session_id": session_id, "call_id": call_id,
+            "consent_ref": consent_ref,
             "purpose": CONSENT_PURPOSE, "retention_days": CONSENT_RETENTION_DAYS,
+            "recording_consent": bool(recording_consent),
             "ledger_index": record["idx"], "ledger_hash": record["hash"],
             "consent_notice": consent_notice(languages)}
+
+
+def complete_recording_notice(conn: sqlite3.Connection, session_id: str,
+                              consented: bool) -> dict:
+    """Called when the recording notice has finished playing.
+
+    Until this runs, `recordings.store` refuses. If the caller declines, any
+    audio already captured for the call is purged and a record is appended,
+    so declining is not merely "we stop from here".
+    """
+    from .security import recordings
+    session = get_session(conn, session_id)
+    call_id = session["call_id"]
+    conn.execute(
+        "UPDATE calls SET notice_completed=1, recording_consent=? WHERE call_id=?",
+        (int(consented), call_id))
+    conn.execute("UPDATE consents SET recording=? WHERE consent_ref=?",
+                 (int(consented), session["consent_ref"]))
+    conn.commit()
+    purged = {}
+    if not consented:
+        purged = recordings.purge_call(conn, call_id, "caller declined recording")
+    ledger.append(conn, "recording_notice", {
+        "call_id": call_id, "session_id": session_id, "consented": bool(consented),
+        "purged": purged.get("purged", 0),
+    }, session_id=session_id)
+    # The notice finished, so the greeting is over and the caller has the floor.
+    from . import call as callsm
+    if callsm.state(call_id)["state"] == callsm.GREETING:
+        callsm.transition(conn, call_id, callsm.LISTENING, reason="notice complete")
+    return {"call_id": call_id, "recording_consent": bool(consented), **purged}
+
+
+def identify_caller(conn: sqlite3.Connection, session_id: str,
+                    identifier: str) -> dict:
+    """Attach a caller to an already-open call.
+
+    A call can start before anyone knows who is on the line, which is why
+    `calls.customer_id` is nullable. The caller then states their registered
+    mobile number or their customer id and this binds the two together.
+
+    Identification is not authentication. All this does is decide whose
+    enrolment the voice check will run against; `record_verification` is
+    still what decides whether the speaker is that person.
+    """
+    from .banking import registry
+    session = get_session(conn, session_id)
+    if session["customer_id"]:
+        raise ValueError("this call is already identified")
+
+    found = registry.find_customer(conn, identifier)
+    if not found:
+        # Ambiguous last four lands here too: registry returns nothing rather
+        # than picking one, and the caller is asked for their customer id.
+        ledger.append(conn, "identification", {
+            "session_id": session_id, "call_id": session["call_id"],
+            "matched": False, "method": "mobile_or_customer_id",
+        }, session_id=session_id)
+        return {"identified": False,
+                "reason": "no single active customer matches that mobile number or "
+                          "customer id; please state your customer id"}
+
+    cid = found["customer_id"]
+    conn.execute("UPDATE sessions SET customer_id=? WHERE session_id=?", (cid, session_id))
+    conn.execute("UPDATE calls SET customer_id=? WHERE call_id=?", (cid, session["call_id"]))
+    conn.commit()
+    ledger.append(conn, "identification", {
+        "session_id": session_id, "call_id": session["call_id"],
+        "customer_ref": cid, "matched": True, "method": "mobile_or_customer_id",
+    }, session_id=session_id)
+
+    summary = registry.customer_summary(conn, cid) or {}
+    return {"identified": True, "customer_id": cid, "name": found["name"],
+            "language": found["language"], "call_id": session["call_id"],
+            "enrolled": bool(summary.get("enrolled")),
+            "next": "voice_verification" if summary.get("enrolled") else "enrolment"}
 
 
 def consent_notice(languages: str = "en") -> dict[str, str]:
@@ -141,17 +265,42 @@ def detect_anomalies(conn: sqlite3.Connection, session: sqlite3.Row, slots: dict
 def run_turn(conn: sqlite3.Connection, session_id: str, *, text: str | None = None,
              audio: bytes | None = None, otp: str | None = None,
              confirm: bool | None = None, asr_confidence: float | None = None,
-             agent_id: str | None = None) -> ComplianceTrace:
+             agent_id: str | None = None, cancel=None) -> ComplianceTrace:
+    """One turn.
+
+    `cancel` is the token from `call.begin_turn`. It is checked at every stage
+    boundary, so a caller who starts speaking again stops this turn at the
+    next boundary instead of getting two answers. Callers that do not go
+    through the call state machine pass nothing and behave as before.
+    """
     session = get_session(conn, session_id)
     st = state(session_id)
     turn_index = session["turn_count"]
     trace = ComplianceTrace(session_id=uuid.UUID(session_id), turn_index=turn_index,
                             consent_ref=uuid.UUID(session["consent_ref"]))
+    trace._cancel = cancel
     core = MockCore(conn)
 
     # ---------------------------------------------------------- 1. transcript
     if audio is not None:
         from .pipeline import asr, vad
+        from .security import recordings
+        # Keep the caller's audio if, and only if, the notice has been spoken
+        # and consent given. store() re-checks both and refuses otherwise, so
+        # this call cannot be the thing that leaks (D21). A failure here must
+        # not drop the turn: the caller is mid sentence.
+        try:
+            recordings.store(conn, session["call_id"], audio, turn_id=turn_index,
+                             speaker="customer", consent_ref=session["consent_ref"])
+        except recordings.ConsentError:
+            pass                      # the ordinary case before the notice
+        except Exception as exc:      # noqa: BLE001
+            # Disk full, bad key, anything else. Losing the recording is
+            # survivable; losing the turn is not. Say so in the ledger so it
+            # is not a silent gap in the evidence.
+            ledger.append(conn, "recording_failed",
+                          {"call_id": session["call_id"], "turn_id": turn_index,
+                           "error": type(exc).__name__}, session_id=session_id)
         with trace.stage("vad", audio, component="vad") as rec:
             speech = vad.trim_to_speech(audio)
             rec.outputs = speech["summary"]
@@ -179,6 +328,21 @@ def run_turn(conn: sqlite3.Connection, session_id: str, *, text: str | None = No
     text = text or ""
     trace.transcript = text
     trace.asr_confidence = float(asr_confidence)
+
+    # ---------------------------------------------------------- 1b. not a request
+    #
+    # Three kinds of turn must never reach the classifier, because an intent
+    # is the wrong question to ask of them. Each was observed answering with
+    # the grounding refusal, which is correct for an obscure policy question
+    # and absurd as a reply to silence. See pipeline/smalltalk.py.
+    # Not when the turn carries structured input. An OTP or a read-back
+    # confirmation arrives with no text at all, because the caller pressed a
+    # button rather than said something, and the blank guard swallowed the
+    # whole tier 2 flow the first time this shipped.
+    if otp is None and confirm is None:
+        early = _not_a_request(conn, session, trace, st, text, audio is not None)
+        if early is not None:
+            return early
 
     # ---------------------------------------------------------- 2. language id
     with trace.stage("langid", text, component="langid") as rec:
@@ -336,14 +500,38 @@ def run_turn(conn: sqlite3.Connection, session_id: str, *, text: str | None = No
     otp_needed = trace.risk_tier >= TIER_REQUIRING_OTP
     with trace.stage("policy", {"tier": trace.risk_tier, "R": trace.risk_score,
                                 "c_final": trace.fused_confidence}, component="nlu") as rec:
+        # A caller who has asked for a person gets one. Clarifying at someone
+        # who just said "put me through" is the most irritating thing a
+        # helpline can do, so the request short-circuits the whole ladder.
+        agent_requested = trace.intent == "agent_request"
         verdict = dialogue.gate(
             tier=trace.risk_tier, R=R, c_final=trace.fused_confidence or 0.0,
             needs_grounding=grounding_required, grounded=grounded,
             verification_passed=auth.passed if auth else None,
             otp_passed=None if otp_needed else True,
-            readback_confirmed=None if otp_needed else True)
+            readback_confirmed=None if otp_needed else True,
+            clarifications=int(st.get("clarifications", 0)),
+            agent_requested=agent_requested)
         rec.outputs = verdict
         rec.model_id = "tier-gate"
+
+    # R5. "Are you a real person?" is answered plainly, before any of the
+    # machinery below can hedge it. Natural is fine; pretending to be human
+    # is not, and this is the same trust question the project is about.
+    if voice_style.asks_if_human(trace.transcript or ""):
+        with trace.stage("honesty", trace.transcript or "", component="nlu") as rec:
+            rec.outputs = {"asked_if_human": True}
+            rec.notes = "answered plainly, with a human offered"
+        trace.decision = "automated"
+        trace.decision_reason = "caller asked whether this is a person"
+        trace.action_taken = "declare_automated"
+        trace.reply_text = voice_style.honest_answer(lang)
+        trace.reply_language = lang
+        finalise(conn, session, trace)
+        conn.execute("UPDATE sessions SET turn_count=turn_count+1"
+                     " WHERE session_id=?", (session["session_id"],))
+        conn.commit()
+        return trace
 
     # ---------------------------------------------------------- 12. act
     outcome = _act(conn, session, trace, verdict, auth, otp_needed, lang, core, st)
@@ -354,6 +542,23 @@ def run_turn(conn: sqlite3.Connection, session_id: str, *, text: str | None = No
     trace.reply_text = outcome["reply"]
     trace.reply_language = lang
     trace.agent_id = agent_id
+
+    # "Two failed clarifications in a row" means in a row. A turn that got
+    # somewhere clears the count, or a caller who asks three unrelated vague
+    # questions across a long call gets transferred for no good reason.
+    if trace.decision != "clarify":
+        st["clarifications"] = 0
+
+    # R5. A short filler makes a pause feel intentional rather than broken.
+    # Every rule about when it may appear lives in voice_style, including the
+    # ones that matter: never in tier 2 or 3, never near digits or money,
+    # never in a refusal, never twice in a row.
+    styled = voice_style.decorate(
+        trace.reply_text or "", lang=lang, tier=trace.risk_tier,
+        decision=trace.decision, last_turn_had_filler=bool(st.get("used_filler")),
+        is_readback=bool(trace.auth and trace.auth.readback_text))
+    trace.reply_text = styled["text"]
+    st["used_filler"] = styled["used_filler"]
 
     # ---------------------------------------------------------- 13. redact and persist
     finalise(conn, session, trace)
@@ -607,6 +812,63 @@ def _authenticate(conn: sqlite3.Connection, session: sqlite3.Row, trace: Complia
     return trace.auth
 
 
+def _not_a_request(conn, session, trace: ComplianceTrace, st: dict,
+                   text: str, had_audio: bool) -> ComplianceTrace | None:
+    """Answer a turn that is not a request, or return None to carry on.
+
+    Deliberately before language identification: an empty string has no
+    language either, and running the detector on it produced a confident
+    reading of nothing.
+
+    None of these can act. They set no intent, touch no slots, and reach no
+    banking function, so there is nothing for the risk engine or the gate to
+    decide. They are recorded as `clarify` rather than `automated`, because
+    the assistant did not do anything: it asked, or it acknowledged.
+    """
+    from .pipeline import smalltalk
+
+    lang = (trace.dominant_language or session["languages"].split(",")[0]
+            if hasattr(session, "keys") and "languages" in session.keys() else "en")
+    lang = lang if lang in ("en", "hi", "mr") else "en"
+
+    def answer(reply: str, action: str, note: str, decision: str = "clarify"):
+        with trace.stage("smalltalk", text, component="nlu") as rec:
+            rec.outputs = {"kind": action}
+            rec.notes = note
+        trace.intent = None
+        trace.decision, trace.decision_reason = decision, note
+        trace.action_taken = action
+        trace.reply_text, trace.reply_language = reply, lang
+        finalise(conn, session, trace)
+        conn.execute("UPDATE sessions SET turn_count=turn_count+1 WHERE session_id=?",
+                     (session["session_id"],))
+        conn.commit()
+        return trace
+
+    # Silence, or noise the recogniser could not make anything of.
+    if smalltalk.is_blank(text, trace.asr_confidence):
+        return answer(smalltalk.blank_reply(lang), "ask_again",
+                      "nothing intelligible was heard, so there is no request "
+                      "to classify")
+
+    # The phrase the assistant itself asked for, typed rather than spoken.
+    # A voice check needs a voice; refusing it as an unknown request, one
+    # turn after asking for it, is the worst version of this.
+    if smalltalk.is_voice_phrase(text) and not had_audio:
+        return answer(smalltalk.voice_phrase_typed_reply(lang),
+                      "need_spoken_phrase",
+                      "the caller typed the voice phrase; a voice check needs "
+                      "audio")
+
+    # Courtesy. Not a request, and not out of scope either.
+    kind = smalltalk.is_pleasantry(text)
+    if kind:
+        return answer(smalltalk.pleasantry_reply(kind, lang),
+                      f"pleasantry_{kind}",
+                      "courtesy, not a banking request", decision="automated")
+    return None
+
+
 def _act(conn, session, trace: ComplianceTrace, verdict: dict, auth, otp_needed: bool,
          lang: str, core: MockCore, st: dict) -> dict:
     intent, slots = trace.intent, trace.slots
@@ -643,6 +905,17 @@ def _act(conn, session, trace: ComplianceTrace, verdict: dict, auth, otp_needed:
         trace.auth.method = "speaker+otp"
         trace.auth.otp_required = True
         return wrap(out, "escalated", "tier 2 requires a one time password and a read-back")
+
+    # R6. Ask one short question rather than fetching a human. The gate has
+    # already decided this is the confidence check and nothing weightier, so
+    # what is missing is understanding, not authority.
+    if verdict["outcome"] == "clarify":
+        st["clarifications"] = verdict.get("clarifications", 1)
+        options = [i for i in (trace.sub_intents or []) if i] or \
+                  ([trace.intent] if trace.intent and
+                   trace.intent != "out_of_scope" else [])
+        out = actions.clarify(trace, options, st["clarifications"])
+        return wrap(out, "clarify", verdict["reason"])
 
     if not verdict["automate"]:
         out = (actions.refuse(trace, verdict["reason"]) if verdict["outcome"] == "refused"
@@ -743,10 +1016,23 @@ def _resume_pending(conn, session, trace: ComplianceTrace, pending: dict,
         else:
             out = _dispatch(core, session["customer_id"], trace, pending["intent"],
                             pending["slots"])
-            trace.decision = "automated"
-            trace.decision_reason = "tier 2 completed: verification, one time password and read-back all passed"
             trace.action_taken, trace.action_result = out["action_taken"], out["result"]
             trace.reply_text = actions.pick(out["reply"], lang)
+            # The three checks passing means the caller is allowed to ask.
+            # It does not mean the action succeeded: an unregistered payee or
+            # insufficient funds still refuses at the core banking layer.
+            # Recording that turn as "automated" told the dashboard an action
+            # was taken when it was refused.
+            if out["action_taken"] in ("refuse", "fund_transfer_declined"):
+                trace.decision = "refused"
+                trace.decision_reason = (
+                    "verification, one time password and read-back all passed, but "
+                    f"the action itself was refused: "
+                    f"{out['result'].get('reason', out['action_taken'])}")
+            else:
+                trace.decision = "automated"
+                trace.decision_reason = ("tier 2 completed: verification, one time "
+                                         "password and read-back all passed")
 
     trace.reply_language = lang
     finalise(conn, session, trace)
@@ -842,6 +1128,30 @@ def finalise(conn: sqlite3.Connection, session: sqlite3.Row, trace: ComplianceTr
         " VALUES (?,?,?,?,?)",
         (str(trace.trace_id), str(trace.session_id), trace.turn_index,
          trace.created_at.isoformat(), __import__("json").dumps(body, ensure_ascii=False)))
+    # One row per turn on the call, so the dashboard can list and filter a
+    # conversation without parsing every trace blob.
+    if session["call_id"]:
+        conn.execute(
+            # Upsert rather than INSERT OR REPLACE. A barge-in can mark this
+            # turn interrupted before it finishes, and REPLACE would quietly
+            # set that flag back to 0 on the way out. Everything else is
+            # overwritten; `interrupted` is only ever raised, never lowered.
+            "INSERT INTO turns (call_id, turn_id, trace_id, state,"
+            " decision, interrupted, risk_tier, intent, language, created_at)"
+            " VALUES (?,?,?,?,?,0,?,?,?,?)"
+            " ON CONFLICT(call_id, turn_id) DO UPDATE SET"
+            "   trace_id=excluded.trace_id, state=excluded.state,"
+            "   decision=excluded.decision, risk_tier=excluded.risk_tier,"
+            "   intent=excluded.intent, language=excluded.language,"
+            "   created_at=excluded.created_at",
+            (session["call_id"], trace.turn_index, str(trace.trace_id),
+             trace.action_taken, trace.decision, trace.risk_tier, trace.intent,
+             trace.reply_language or trace.dominant_language,
+             trace.created_at.isoformat()))
+        conn.execute(
+            "UPDATE calls SET language=COALESCE(?, language), final_state=?"
+            " WHERE call_id=?",
+            (trace.reply_language, trace.decision, session["call_id"]))
     conn.commit()
 
     record = ledger.append(conn, "turn", {
@@ -912,6 +1222,16 @@ def withdraw_consent(conn: sqlite3.Connection, session_id: str) -> dict:
     conn.execute("UPDATE sessions SET withdrawn_at=? WHERE session_id=?", (now, session_id))
     conn.execute("UPDATE consents SET withdrawn_at=? WHERE session_id=?", (now, session_id))
     purged = crypto.purge_session(conn, session_id)
+    row = conn.execute("SELECT call_id FROM sessions WHERE session_id=?",
+                       (session_id,)).fetchone()
+    if row and row["call_id"]:
+        from .security import recordings
+        purged |= {"recordings_purged":
+                   recordings.purge_call(conn, row["call_id"],
+                                         "consent withdrawn")["purged"]}
+        conn.execute("UPDATE calls SET recording_consent=0, ended_at=?,"
+                     " final_state='consent_withdrawn' WHERE call_id=?",
+                     (now, row["call_id"]))
     conn.commit()
     SESSION_STATE.pop(session_id, None)
     record = ledger.append(conn, "purge", {
